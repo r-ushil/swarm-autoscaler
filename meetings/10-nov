@@ -1,0 +1,14 @@
+Look into how AB works - open vs closed loop request systems
+	keep alive param
+	sort flask logic, can be simpler and just vary CPU util through c param in ab
+
+Does Docker Swarm load balance in L4 / L7 (req vs connection)?
+
+Look into tracing the requests - Jaeger?
+
+Possibly look into Traefik (lb problem solved by reverse-proxy, and really nice with Jaeger)
+
+
+
+Need to read papers - keep up to date with the SotA and make a case for push based
+

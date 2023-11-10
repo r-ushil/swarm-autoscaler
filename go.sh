@@ -1,0 +1,23 @@
+#!/bin/bash
+
+sudo systemctl stop firewalld
+
+# ufw disable on arch
+
+docker swarm init
+
+# connect other machine to this node
+
+# ensure webserver image on both machines (docker build -t webserver /path/to/webserver
+
+docker service create --name webserver --publish 8080:8080 webserver
+
+
+ab -n 5000 -c 5 -s 60 http://127.0.0.1:8080/test
+
+# in another window have docker stats open
+
+docker service update --replicas 2 webserver
+
+# run ab again, look at docker stats on both machines
+
