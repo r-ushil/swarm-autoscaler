@@ -1,31 +1,43 @@
-from flask import Flask
-import time
+import socket
+from flask import Flask, jsonify, request
+from opentelemetry import trace
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.resources import Resource
 
 app = Flask(__name__)
 
-# Global variable to store the time of the last request
-last_request_time = time.time()
+
+resource = Resource(attributes={"service.name": "webserver"})
+trace.set_tracer_provider(TracerProvider(resource=resource))
+
+
+exporter = OTLPSpanExporter(
+    endpoint="http://jaeger:4317",
+    insecure=True,
+)
+
+trace.get_tracer_provider().add_span_processor(
+    BatchSpanProcessor(exporter)
+)
+
+FlaskInstrumentor().instrument_app(app)
+tracer = trace.get_tracer(__name__)
+
+
+@app.before_request
+def before_req_otel():
+    tracer = trace.get_tracer(__name__)
+    current_span = trace.get_current_span()
+    current_span.set_attribute("instance_id", socket.gethostname())
 
 @app.route('/test')
 def test():
-    global last_request_time
-    
-    # Calculate time since the last request
-    current_time = time.time()
-    time_difference = current_time - last_request_time
-    last_request_time = current_time
-
-    # Adjust workload based on request frequency
-    # If requests are coming in faster, 'time_difference' will be small
-    # If they're coming in slower, 'time_difference' will be larger
-    workload_factor = max(1, int(1000 * time_difference))
-    
-    # CPU-intensive task proportional to request frequency
-    for _ in range(workload_factor):
-        _ = sum([x*x for x in range(10)])
-
-    return 'Done!', 200
+    ip_addr = request.remote_addr
+    return jsonify(message=ip_addr)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, threaded=True)
+    app.run(debug=True, host='0.0.0.0', port=8080, threaded=True)
 

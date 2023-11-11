@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY app.py /app/
 
-RUN pip install flask
+RUN pip3 install Flask opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp opentelemetry-instrumentation-flask
 
 EXPOSE 8080
 
