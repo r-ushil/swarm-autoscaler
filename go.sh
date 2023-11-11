@@ -2,8 +2,6 @@
 
 sudo systemctl stop firewalld
 
-# ufw disable on arch
-
 docker swarm init
 
 # connect other machine to this node
@@ -21,3 +19,14 @@ docker service update --replicas 2 webserver
 
 # run ab again, look at docker stats on both machines
 
+
+# ----------------------------------------------------------------------------------------------
+
+# using docker compose
+
+
+docker stack deploy -c docker-compose.yml webserver-jaeger
+
+# to remove
+
+docker stack rm webserver-jaeger
