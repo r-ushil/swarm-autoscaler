@@ -30,3 +30,11 @@ docker stack deploy -c docker-compose.yml webserver-jaeger
 # to remove
 
 docker stack rm webserver-jaeger
+
+
+# -------------------------------
+
+#docker stack deploy again
+
+# prometheus endpoint at 9090, use promql to get info
+# TODO: setup grafana 

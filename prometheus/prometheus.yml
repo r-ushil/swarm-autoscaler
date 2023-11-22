@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'webserver'
+    dns_sd_configs:
+      - names:
+          - 'tasks.webserver'
+        type: 'A'
+        port: 8080

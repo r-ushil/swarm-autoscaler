@@ -1,43 +1,26 @@
-import socket
+import os
 from flask import Flask, jsonify, request
-from opentelemetry import trace
-from opentelemetry.instrumentation.flask import FlaskInstrumentor
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.resources import Resource
+from prometheus_flask_exporter import PrometheusMetrics
 
 app = Flask(__name__)
 
+metrics = PrometheusMetrics(app, group_by='endpoint')
+metrics.info('app_info', 'Webserver', version='0.0.2')
 
-resource = Resource(attributes={"service.name": "webserver"})
-trace.set_tracer_provider(TracerProvider(resource=resource))
+# Get hostname - make sure this is a callable for labels
+hostname_callable = lambda: os.getenv('HOSTNAME', 'localhost')
 
-
-exporter = OTLPSpanExporter(
-    endpoint="http://jaeger:4317",
-    insecure=True,
+request_latency = metrics.histogram(
+    'flask_request_latency_seconds',
+    'Latency of HTTP requests in seconds',
+    labels={'hostname': hostname_callable}
 )
-
-trace.get_tracer_provider().add_span_processor(
-    BatchSpanProcessor(exporter)
-)
-
-FlaskInstrumentor().instrument_app(app)
-tracer = trace.get_tracer(__name__)
-
-
-@app.before_request
-def before_req_otel():
-    tracer = trace.get_tracer(__name__)
-    current_span = trace.get_current_span()
-    current_span.set_attribute("instance_id", socket.gethostname())
 
 @app.route('/test')
+@request_latency
 def test():
     ip_addr = request.remote_addr
     return jsonify(message=ip_addr)
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=8080, threaded=True)
-
+    app.run(debug=False, host='0.0.0.0', port=8080)

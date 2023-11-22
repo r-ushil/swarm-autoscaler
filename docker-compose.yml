@@ -7,7 +7,7 @@ networks:
 services:
   webserver:
     image: webserver:latest
-    hostname: $HOSTNAME
+    # hostname: $HOSTNAME
     ports:
       - "8080:8080"
     deploy:
@@ -21,11 +21,11 @@ services:
       - gateway
 
 
-  jaeger:
-    image: jaegertracing/all-in-one:latest
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
-      - "6831:6831"
-      - "16686:16686"
+      - "9090:9090"
     networks:
       - gateway
-

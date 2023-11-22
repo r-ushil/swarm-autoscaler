@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY app.py /app/
 
-RUN pip3 install Flask opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp opentelemetry-instrumentation-flask
+RUN pip3 install Flask prometheus_flask_exporter
 
 EXPOSE 8080
 
