@@ -1,7 +1,0 @@
-run grafana
-
-add prometheus as an endpoint
-
-create dashboards
-
-push to git
