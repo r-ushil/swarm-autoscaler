@@ -37,4 +37,11 @@ docker stack rm webserver-jaeger
 #docker stack deploy again
 
 # prometheus endpoint at 9090, use promql to get info
-# TODO: setup grafana 
+
+# grafana folder needs to be owned by 472:472
+sudo chown -R 472:472 ./monitoring/grafana-data
+
+
+# in grafana, use http://prometheus:9090
+
+
