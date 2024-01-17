@@ -8,12 +8,12 @@ BEGIN
 // Trace the execution of the 'execve' system call
 tracepoint:syscalls:sys_enter_execve
 {
-    // printf("execve called: %s\n", str(args->filename));
+    // Extract the command name from the full path
+    $cmd = str(args->filename);
 
-    // Check if the command being executed is 'cat'
-    if (str(args->filename) == "/usr/bin/cat")
+    if ($cmd == "/usr/bin/cat" || $cmd == "/bin/cat")
     {
-        printf("cat executed: %s\n", str(args->filename));
+        printf("cat executed: %s\n", $cmd);
     }
 }
 
