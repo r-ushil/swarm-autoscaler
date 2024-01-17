@@ -1,0 +1,24 @@
+#!/usr/bin/env bpftrace
+
+BEGIN
+{
+    printf("Starting bpftrace script...\n");
+}
+
+// Trace the execution of the 'execve' system call
+tracepoint:syscalls:sys_enter_execve
+{
+    // printf("execve called: %s\n", str(args->filename));
+
+    // Check if the command being executed is 'cat'
+    if (str(args->filename) == "/usr/bin/cat")
+    {
+        printf("cat executed: %s\n", str(args->filename));
+    }
+}
+
+END
+{
+    printf("Ending bpftrace script...\n");
+}
+
