@@ -13,7 +13,8 @@ tracepoint:syscalls:sys_enter_execve
 
     if ($cmd == "/usr/bin/cat" || $cmd == "/bin/cat")
     {
-        printf("cat executed: %s\n", $cmd);
+        $ppid = ((struct task_struct *) curtask)->real_parent->pid;
+        printf("cat executed: %s, PID: %d, PPID: %d\n", $cmd, pid, $ppid);
     }
 }
 
