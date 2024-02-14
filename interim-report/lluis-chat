@@ -1,0 +1,7 @@
+
+
+worth looking at what baseline we're trying to beat - either k8s, or reactive autoscaler
+	- microbenchmark k8s with docker swarm - work out deltas to remove with our new autoscaler
+
+
+
