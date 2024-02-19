@@ -1,0 +1,15 @@
+HTTP request sent to manager node's daemon (either local or via tcp) - this is via /var/run/docker.sock, or port 2375
+
+needs to have things like versioning for concurrency control, gets validated / applied
+then passed to Docker's orchestration layer - which compares desired state with current state and makes adjustments.
+then schedules to choose suitable node in cluster for add/remove, then deploys/rolls out.
+
+
+why not construct the HTTP request ourselves?
+	because they recommend not to - there seems to be a very specific way to interface with this docker daemon they abstract away
+	looks like the way the api works - the entire current state needs to be fetched, updated and passed back in (ugh)
+
+
+
+
+
