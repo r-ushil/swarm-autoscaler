@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
+	"time"
 )
 
 // ScaleService adjusts the service replicas based on the direction for the given container ID.
@@ -89,4 +91,82 @@ func changeServiceReplicas(cli *client.Client, serviceID string, direction strin
 
 	fmt.Printf("Service update response: %+v\n", response)
 	return nil
+}
+
+// EventNotifier notifies about container start and stop events.
+type EventNotifier struct {
+	StartChan chan string
+	StopChan  chan string
+}
+
+// NewEventNotifier creates and returns a new EventNotifier.
+func NewEventNotifier() *EventNotifier {
+	return &EventNotifier{
+		StartChan: make(chan string, 10), // Buffered channels for start and stop events
+		StopChan:  make(chan string, 10),
+	}
+}
+
+// ListenForEvents starts listening for Docker container start and stop events.
+func (en *EventNotifier) ListenForEvents(ctx context.Context) {
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		fmt.Println("Error creating Docker client:", err)
+		return
+	}
+
+	filters := filters.NewArgs(
+		filters.Arg("type", "container"),
+		filters.Arg("event", "start"),
+		filters.Arg("event", "die"),
+	)
+
+	options := types.EventsOptions{
+		Filters: filters,
+		Since:   fmt.Sprintf("%d", time.Now().Unix()),
+	}
+
+	eventsCh, errsCh := cli.Events(ctx, options)
+
+	for {
+		select {
+		case event := <-eventsCh:
+			switch event.Action {
+			case "start":
+				fmt.Printf("Container started: %s\n", event.ID)
+				en.StartChan <- event.ID
+			case "die":
+				fmt.Printf("Container stopped: %s\n", event.ID)
+				en.StopChan <- event.ID
+			}
+		case err := <-errsCh:
+			if err != nil {
+				fmt.Println("Error receiving Docker events:", err)
+				return
+			}
+		case <-ctx.Done():
+			fmt.Println("Stopped listening for Docker events.")
+			return
+		}
+	}
+}
+
+// GetRunningContainers returns a slice of container IDs for all currently running containers.
+func GetRunningContainers(ctx context.Context) ([]string, error) {
+    cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+    if err != nil {
+        return nil, fmt.Errorf("error creating Docker client: %w", err)
+    }
+
+    containers, err := cli.ContainerList(ctx, types.ContainerListOptions{})
+    if err != nil {
+        return nil, fmt.Errorf("error listing Docker containers: %w", err)
+    }
+
+    var containerIDs []string
+    for _, container := range containers {
+        containerIDs = append(containerIDs, container.ID)
+    }
+
+    return containerIDs, nil
 }
