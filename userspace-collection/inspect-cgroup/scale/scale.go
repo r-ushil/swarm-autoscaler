@@ -1,38 +1,31 @@
-package main
+package scale
 
 import (
 	"context"
 	"fmt"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
-	"os"
 )
 
-func main() {
-	containerID := "df82c3d455c96dc80c3d871da6ced03ff3108bb951e9d2ad96151751de0f4267"
-	direction := "under" // "over" to increase, "under" to decrease replicas
-
-	// Create a new Docker client
+// ScaleService adjusts the service replicas based on the direction for the given container ID.
+func ScaleService(containerID string, direction string) error {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		fmt.Printf("Error creating Docker client: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error creating Docker client: %w", err)
 	}
 
-	// Find the service ID from the container ID
 	serviceID, err := findServiceIDFromContainer(cli, containerID)
 	if err != nil {
-		fmt.Printf("Error finding service ID from container: %s\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error finding service ID from container: %w", err)
 	}
 
-	// Update the service based on the direction
-	if err := changeServiceReplicas(cli, serviceID, direction); err != nil {
-		fmt.Printf("Error changing service replicas: %s\n", err)
-		os.Exit(1)
+	err = changeServiceReplicas(cli, serviceID, direction)
+	if err != nil {
+		return fmt.Errorf("error changing service replicas: %w", err)
 	}
 
 	fmt.Println("Service replica count changed successfully.")
+	return nil
 }
 
 // findServiceIDFromContainer inspects the container to find its associated service ID.

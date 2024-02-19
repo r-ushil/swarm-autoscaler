@@ -8,19 +8,18 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"userspace-collection/scale"
 )
 
 const (
 	cgroupDir        = "/sys/fs/cgroup/system.slice"
-	collectionPeriod = 5 * time.Second // Adjust the collection period as needed
+	collectionPeriod = 10 * time.Second // Adjust the collection period as needed
 )
-
 
 type MemoryThreshold struct {
 	Value int64
 	Unit  string // "MB" or "GB"
 }
-
 
 func main() {
 
@@ -39,7 +38,6 @@ func main() {
 		fmt.Println("Please provide a memory threshold using the -mm or -mg flag")
 		os.Exit(1)
 	}
-
 
 	files, err := os.ReadDir(cgroupDir)
 	if err != nil {
@@ -66,13 +64,26 @@ func monitorMemoryUsage(containerID string, threshold MemoryThreshold) {
 		}
 
 		memUsageConverted, memUnit := convertMemoryUsage(memUsage, threshold.Unit)
-		
-		status := "under"
+
+		// Determine the scaling direction based on the memory threshold
+		var direction string
 		if int64(memUsageConverted) > threshold.Value {
-			status = "over"
+			direction = "over"
+		} else {
+			direction = "under"
 		}
 
-		fmt.Printf("ContainerID: %s, Status: %s memory threshold, Memory Used: %.2f %s\n", containerID, status, memUsageConverted, memUnit)
+		// Call ScaleService in a goroutine
+		go func(containerID, direction string) {
+			err := scale.ScaleService(containerID, direction)
+			if err != nil {
+				fmt.Printf("Error scaling service for container %s: %v\n", containerID, err)
+			} else {
+				fmt.Printf("Scaled service for container %s, direction: %s\n", containerID, direction)
+			}
+		}(containerID, direction)
+
+		fmt.Printf("ContainerID: %s, Status: %s memory threshold, Memory Used: %.2f %s\n", containerID, direction, memUsageConverted, memUnit)
 	}
 }
 
@@ -85,7 +96,6 @@ func readMemoryUsage(containerID string) (int64, error) {
 
 	return strconv.ParseInt(strings.TrimSpace(string(content)), 10, 64)
 }
-
 
 func convertMemoryUsage(memUsage int64, unit string) (float64, string) {
 	switch unit {
