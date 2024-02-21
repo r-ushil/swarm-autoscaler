@@ -1,5 +1,7 @@
 package main
 
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go bpf ./bpf/cgroup-ingress-perf.c -- -I/usr/include/bpf -O2
+
 import (
 	"context"
 	"fmt"
@@ -10,8 +12,8 @@ import (
 	"github.com/docker/docker/client"
 	"log"
 	"os"
-	"sync"
 )
+
 
 const (
 	cgroupPath = "/sys/fs/cgroup/system.slice"
@@ -68,46 +70,9 @@ func main() {
 		l.Close()
 	}()
 
-	fmt.Println("Setting up perf event reader...")
-	rd, err := perf.NewReader(objs.PerfEventMap, os.Getpagesize())
-	if err != nil {
-		log.Fatalf("Failed to create perf event reader: %v", err)
-	}
-	defer func() {
-		fmt.Println("Closing perf event reader...")
-		rd.Close()
-	}()
+	// Listen for the first packet event
+	listenForPacketPerfEvent(&objs, containerID, ctx, cli)
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-		fmt.Println("Listening for the first packet event...")
-		for {
-			record, err := rd.Read()
-			if err != nil {
-				if err == perf.ErrClosed {
-					fmt.Println("Perf event reader closed, exiting goroutine...")
-					return // Exit if reader is closed
-				}
-				log.Printf("Error reading perf event: %v", err)
-				continue
-			}
-
-			if record.LostSamples != 0 {
-				log.Printf("Lost %d samples", record.LostSamples)
-			}
-
-			fmt.Println("First packet received, performing actions...")
-			if err := unpauseContainer(ctx, cli, containerID); err != nil {
-				log.Printf("Error unpausing container: %v", err)
-			}
-			break // Exit after handling the first event
-		}
-	}()
-
-	wg.Wait() // Wait for the goroutine to finish
 	fmt.Println("Program completed.")
 }
 
@@ -127,4 +92,41 @@ func pauseContainer(ctx context.Context, cli *client.Client, containerID string)
 	}
 	fmt.Println("Container paused successfully.")
 	return nil
+}
+
+func listenForPacketPerfEvent(objs *bpfObjects, containerID string, ctx context.Context, cli *client.Client) {
+    fmt.Println("Setting up perf event reader...")
+	rd, err := perf.NewReader(objs.PerfEventMap, os.Getpagesize())
+	if err != nil {
+		log.Fatalf("Failed to create perf event reader: %v", err)
+	}
+
+	defer func() {
+		fmt.Println("Closing perf event reader...")
+		rd.Close()
+	}()
+
+	fmt.Println("Listening for the first packet event...")
+	for {
+		record, err := rd.Read()
+		if err != nil {
+			if err == perf.ErrClosed {
+				fmt.Println("Perf event reader closed, exiting goroutine...")
+				return // Exit if reader is closed
+			}
+			log.Printf("Error reading perf event: %v", err)
+			continue
+		}
+
+		if record.LostSamples != 0 {
+			log.Printf("Lost %d samples", record.LostSamples)
+		}
+
+		fmt.Println("First packet received, performing actions...")
+		if err := unpauseContainer(ctx, cli, containerID); err != nil {
+			log.Printf("Error unpausing container: %v", err)
+		}
+		break // Exit after handling the first event
+	}
+
 }

@@ -4,21 +4,17 @@
 typedef unsigned int u32;
 
 struct {
-    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(type, BPF_MAP_TYPE_ARRAY);
     __type(key, u32);
     __type(value, u32);
     __uint(max_entries, 1);
-} perf_event_map SEC(".maps");
+} signal_map SEC(".maps");
 
 SEC("cgroup_skb/ingress")
 int detect_first_packet(struct __sk_buff *skb) {
-    int key = 0; // Use a single key for simplicity
-    long data = 1; // Data to send, indicating an event
-    
-    // Logging statement
-    bpf_trace_printk("First packet received\n");
-
-    bpf_perf_event_output(skb, &perf_event_map, BPF_F_CURRENT_CPU, &data, sizeof(data));
+    u32 key = 0;
+    u32 value = 1;
+    bpf_map_update_elem(&signal_map, &key, &value, BPF_ANY);
     return BPF_OK;
 }
 

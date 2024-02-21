@@ -2,6 +2,8 @@ module scale-to-zero
 
 go 1.21.7
 
+replace bpf_bpfel.go => ./bpf2go/bpf_bpfel.go
+
 require (
 	github.com/Microsoft/go-winio v0.4.14 // indirect
 	github.com/cilium/ebpf v0.13.0 // indirect
