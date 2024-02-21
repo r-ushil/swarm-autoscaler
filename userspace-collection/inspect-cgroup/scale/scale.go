@@ -7,6 +7,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"time"
+	"cgroup_net_listen"
 )
 
 // ScaleService adjusts the service replicas based on the direction for the given container ID.
@@ -16,12 +17,7 @@ func ScaleService(containerID string, direction string) error {
 		return fmt.Errorf("error creating Docker client: %w", err)
 	}
 
-	serviceID, err := findServiceIDFromContainer(cli, containerID)
-	if err != nil {
-		return fmt.Errorf("error finding service ID from container: %w", err)
-	}
-
-	err = changeServiceReplicas(cli, serviceID, direction)
+	err = changeServiceReplicas(cli, containerID, direction)
 	if err != nil {
 		return fmt.Errorf("error changing service replicas: %w", err)
 	}
@@ -48,7 +44,13 @@ func findServiceIDFromContainer(cli *client.Client, containerID string) (string,
 }
 
 // changeServiceReplicas changes the number of replicas for the given service ID based on direction.
-func changeServiceReplicas(cli *client.Client, serviceID string, direction string) error {
+func changeServiceReplicas(cli *client.Client, containerID string, direction string) error {
+
+	serviceID, err := findServiceIDFromContainer(cli, containerID)
+	if err != nil {
+		return fmt.Errorf("error finding service ID from container: %w", err)
+	}
+
 	ctx := context.Background()
 
 	// Get the service by ID
@@ -68,7 +70,8 @@ func changeServiceReplicas(cli *client.Client, serviceID string, direction strin
 			if currentReplicas > 1 {
 				newReplicas = currentReplicas - 1
 			} else {
-				return fmt.Errorf("service already has the minimum number of replicas: 1")
+				scaleToZero(cli, containerID)
+				return nil				
 			}
 		} else {
 			return fmt.Errorf("invalid direction: %s", direction)
@@ -84,12 +87,11 @@ func changeServiceReplicas(cli *client.Client, serviceID string, direction strin
 	updateOpts := types.ServiceUpdateOptions{}
 
 	// Update the service
-	response, err := cli.ServiceUpdate(ctx, service.ID, service.Version, service.Spec, updateOpts)
+	_, err = cli.ServiceUpdate(ctx, service.ID, service.Version, service.Spec, updateOpts)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Service update response: %+v\n", response)
 	return nil
 }
 
@@ -169,4 +171,49 @@ func GetRunningContainers(ctx context.Context) ([]string, error) {
     }
 
     return containerIDs, nil
+}
+
+
+func pauseContainer(cli *client.Client, containerID string) error {
+	ctx := context.Background()
+
+	// Pause the container
+	if err := cli.ContainerPause(ctx, containerID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func unpauseContainer(cli *client.Client, containerID string) error {
+	ctx := context.Background()
+
+	// Unpause the container
+	if err := cli.ContainerUnpause(ctx, containerID); err != nil {
+		return err
+	}
+	return nil
+}
+
+
+// there should be a function called ScaleToZero here
+
+func scaleToZero(cli *client.Client, containerID string) error {
+	// Pause the container
+	fmt.Println("Scaling to zero: %s", containerID)
+	if err := pauseContainer(cli, containerID); err != nil {
+		return fmt.Errorf("error pausing container: %w", err)
+	}
+
+	cgroup_net_listen.SetupBPFListener(containerID)
+
+
+	// Unpause the container
+	if err := unpauseContainer(cli, containerID); err != nil {
+		return fmt.Errorf("error unpausing container: %w", err)
+	}
+
+	fmt.Println("Scaling back to one from zero for container: %s", containerID)
+
+	return nil
 }
