@@ -213,7 +213,11 @@ func scaleToZero(cli *client.Client, containerID string) error {
 		return fmt.Errorf("error unpausing container: %w", err)
 	}
 
+
 	fmt.Println("Scaling back to one from zero for container: %s", containerID)
+
+	// Sleep for 5 seconds to avoid reloading BPF program straight away
+	time.Sleep(5 * time.Second)
 
 	return nil
 }
