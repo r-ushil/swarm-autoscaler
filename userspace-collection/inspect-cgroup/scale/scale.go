@@ -70,7 +70,7 @@ func changeServiceReplicas(cli *client.Client, containerID string, direction str
 			if currentReplicas > 1 {
 				newReplicas = currentReplicas - 1
 			} else {
-				scaleToZero(cli, containerID)
+				scaleToZero(cli, serviceID)
 				return nil				
 			}
 		} else {
@@ -80,17 +80,7 @@ func changeServiceReplicas(cli *client.Client, containerID string, direction str
 		return fmt.Errorf("service mode is not replicated or replicas are not set")
 	}
 
-	// Update the number of replicas in the service spec
-	service.Spec.Mode.Replicated.Replicas = &newReplicas
-
-	// Create an update options struct
-	updateOpts := types.ServiceUpdateOptions{}
-
-	// Update the service
-	_, err = cli.ServiceUpdate(ctx, service.ID, service.Version, service.Spec, updateOpts)
-	if err != nil {
-		return err
-	}
+	scaleTo(cli, serviceID, newReplicas)
 
 	return nil
 }
@@ -173,48 +163,56 @@ func GetRunningContainers(ctx context.Context) ([]string, error) {
     return containerIDs, nil
 }
 
-
-func pauseContainer(cli *client.Client, containerID string) error {
+// scale service to number of replicas
+func scaleTo(cli *client.Client, serviceID string, replicas uint64) error {
 	ctx := context.Background()
+    service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
+    if err != nil {
+        return err
+    }
 
-	// Pause the container
-	if err := cli.ContainerPause(ctx, containerID); err != nil {
-		return err
-	}
+    // Set the replicas to the desired number
+    service.Spec.Mode.Replicated.Replicas = &replicas
+
+    updateOpts := types.ServiceUpdateOptions{}
+    _, err = cli.ServiceUpdate(ctx, serviceID, service.Version, service.Spec, updateOpts)
+    if err != nil {
+        return err
+    }
+
+    fmt.Printf("Service %s scaled to %d replicas\n", serviceID, replicas)
 
 	return nil
 }
 
-func unpauseContainer(cli *client.Client, containerID string) error {
+
+func scaleToZero(cli *client.Client, serviceID string) error {
+	
 	ctx := context.Background()
+    service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
+    if err != nil {
+        return err
+    }
 
-	// Unpause the container
-	if err := cli.ContainerUnpause(ctx, containerID); err != nil {
-		return err
-	}
-	return nil
-}
-
-
-// there should be a function called ScaleToZero here
-
-func scaleToZero(cli *client.Client, containerID string) error {
-	// Pause the container
-	fmt.Println("Scaling to zero: %s", containerID)
-	if err := pauseContainer(cli, containerID); err != nil {
-		return fmt.Errorf("error pausing container: %w", err)
-	}
-
-	cgroup_net_listen.SetupBPFListener(containerID)
+    // Set the replicas to zero
+	scaleTo(cli, serviceID, 0)
 
 
-	// Unpause the container
-	if err := unpauseContainer(cli, containerID); err != nil {
-		return fmt.Errorf("error unpausing container: %w", err)
-	}
+	// Get published port for the service (gets first one only)
+	var publishedPort uint32
+	if len(service.Endpoint.Ports) > 0 {
+        // Assuming we are interested in the first port
+        publishedPort = service.Endpoint.Ports[0].PublishedPort
+    } else {
+        return fmt.Errorf("no published ports found for service %s", serviceID)
+    }
 
 
-	fmt.Println("Scaling back to one from zero for container: %s", containerID)
+	// Setup BPF listener for the published port: to implement
+	cgroup_net_listen.SetupBPFListener(publishedPort)
+
+	// Scale the service back to 1 replica
+	scaleTo(cli, serviceID, 1)
 
 	// Sleep for 5 seconds to avoid reloading BPF program straight away
 	time.Sleep(5 * time.Second)
