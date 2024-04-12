@@ -1,0 +1,11 @@
+downloaded iso to local machine
+
+logged into iDRAC through console (nslookup on hostname)
+
+launch console, mount iso thorugh virtual media and boot to virtual CD/ROM
+
+install Proxmox, use IP, hostname and DNS from networking folder
+
+change resolv.conf to include 155.198.142.8 and .7
+
+log into Proxmox web console, disable enterprise repo, add pve-no-subscription repo, add user/group/perms

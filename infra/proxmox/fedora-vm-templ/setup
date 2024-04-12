@@ -1,0 +1,13 @@
+needed to go to fedora - need kernel version >6.6 for tcx
+
+
+
+solve dns with ./fix-dns.sh locally
+
+yum update
+
+reboot
+
+install docker through ansible
+
+yum install golang

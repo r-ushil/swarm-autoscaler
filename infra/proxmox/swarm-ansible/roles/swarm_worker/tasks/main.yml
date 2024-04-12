@@ -1,0 +1,6 @@
+---
+- name: Join Docker Swarm
+  command: >
+    docker swarm join --token "{{ hostvars['manager']['swarm_join_token'] }}"
+    "{{ hostvars['manager']['ansible_host'] }}:2377"
+              
