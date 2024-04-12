@@ -1,0 +1,13 @@
+---
+# Handler to restart NetworkManager to apply DNS changes
+- name: restart network manager
+  ansible.builtin.service:
+    name: NetworkManager
+    state: restarted
+
+# Handler to restart sshd to apply configuration changes
+- name: restart sshd
+  ansible.builtin.service:
+    name: sshd
+    state: restarted
+

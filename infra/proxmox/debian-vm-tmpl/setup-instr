@@ -1,0 +1,3 @@
+copy ssh keys into toolbox
+
+clone through proxmox ui and assign static IPs.

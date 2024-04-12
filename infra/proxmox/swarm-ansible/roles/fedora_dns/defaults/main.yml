@@ -1,0 +1,5 @@
+---
+connection_name: "cloud-init eth0"
+dns_servers: "155.198.142.8,155.198.142.7"
+search_domain: "doc.ic.ac.uk"
+permit_root_login: "yes"

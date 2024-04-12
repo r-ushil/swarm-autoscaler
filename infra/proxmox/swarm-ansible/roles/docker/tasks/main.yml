@@ -1,0 +1,73 @@
+---
+- name: Update package cache
+  ansible.builtin.package:
+    update_cache: yes
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Update package cache (RedHat)
+  dnf:
+    name: "*"
+    state: latest
+  when: ansible_facts['os_family'] == "RedHat"
+
+- name: Install required packages for Debian
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg2
+      - software-properties-common
+    state: present
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install required packages for RedHat
+  dnf:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg2
+      - yum-utils
+    state: present
+  when: ansible_facts['os_family'] == "RedHat"
+
+- name: Add Docker GPG key
+  ansible.builtin.apt_key:
+    url: https://download.docker.com/linux/debian/gpg
+    state: present
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Add Docker GPG key (RedHat)
+  rpm_key:
+    state: present
+    key: https://download.docker.com/linux/fedora/gpg
+  when: ansible_facts['os_family'] == "RedHat"
+
+- name: Setup stable Docker repo for Debian
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=amd64] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+    state: present
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Setup stable Docker repo for RedHat
+  yum_repository:
+    name: Docker-ce-stable
+    description: Docker CE Stable - $basearch
+    baseurl: https://download.docker.com/linux/fedora/$releasever/$basearch/stable
+    enabled: yes
+    gpgcheck: yes
+    gpgkey: https://download.docker.com/linux/fedora/gpg
+  when: ansible_facts['os_family'] == "RedHat"
+
+- name: Install Docker CE for Debian
+  apt:
+    name: docker-ce
+    state: latest
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install Docker CE for RedHat
+  dnf:
+    name: docker-ce
+    state: latest
+  when: ansible_facts['os_family'] == "RedHat"
+

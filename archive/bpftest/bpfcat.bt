@@ -1,0 +1,25 @@
+#!/usr/bin/env bpftrace
+
+BEGIN
+{
+    printf("Starting bpftrace script...\n");
+}
+
+// Trace the execution of the 'execve' system call
+tracepoint:syscalls:sys_enter_execve
+{
+    // Extract the command name from the full path
+    $cmd = str(args->filename);
+
+    if ($cmd == "/usr/bin/cat" || $cmd == "/bin/cat")
+    {
+        $ppid = ((struct task_struct *) curtask)->real_parent->pid;
+        printf("cat executed: %s, PID: %d, PPID: %d\n", $cmd, pid, $ppid);
+    }
+}
+
+END
+{
+    printf("Ending bpftrace script...\n");
+}
+

@@ -1,0 +1,41 @@
+auto lo
+iface lo inet loopback
+
+iface eno8303 inet manual
+
+auto vmbr0
+iface vmbr0 inet static
+	address 146.179.4.13/23
+	gateway 146.179.4.1
+	bridge-ports eno8303
+	bridge-stp off
+	bridge-fd 0
+
+# Bridge for internal VM network 1
+auto vmbr1
+iface vmbr1 inet manual
+        address 192.168.1.1
+        netmask 255.255.255.0
+	bridge-ports none
+	bridge-stp off
+	bridge-fd 0
+
+# Bridge for internal VM network 2
+auto vmbr2
+iface vmbr2 inet manual
+        address 192.168.2.1
+        netmask 255.255.255.0
+	bridge-ports none
+	bridge-stp off
+	bridge-fd 0
+
+iface eno8403 inet manual
+
+iface idrac inet manual
+
+iface ens1f0np0 inet manual
+
+iface ens1f1np1 inet manual
+
+source /etc/network/interfaces.d/*
+

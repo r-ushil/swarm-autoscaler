@@ -116,6 +116,9 @@ func startMonitoring(parentCtx context.Context, containerID string, resource Res
     if _, exists := monitoringCtxMap.Load(containerID); !exists {
         monitorCtx, monitorCancel := context.WithCancel(parentCtx)
         monitoringCtxMap.Store(containerID, monitorCancel)
+
+		// Wait before we immediately start monitoring / scaling
+		time.Sleep(5 * time.Second)
         
         // Execute the Monitor method as a goroutine
         go resource.Monitor(monitorCtx, containerID, collectionPeriod)

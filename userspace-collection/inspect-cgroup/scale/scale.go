@@ -7,6 +7,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"time"
+	"cgroup_net_listen"
 )
 
 // ScaleService adjusts the service replicas based on the direction for the given container ID.
@@ -16,12 +17,7 @@ func ScaleService(containerID string, direction string) error {
 		return fmt.Errorf("error creating Docker client: %w", err)
 	}
 
-	serviceID, err := findServiceIDFromContainer(cli, containerID)
-	if err != nil {
-		return fmt.Errorf("error finding service ID from container: %w", err)
-	}
-
-	err = changeServiceReplicas(cli, serviceID, direction)
+	err = changeServiceReplicas(cli, containerID, direction)
 	if err != nil {
 		return fmt.Errorf("error changing service replicas: %w", err)
 	}
@@ -48,7 +44,13 @@ func findServiceIDFromContainer(cli *client.Client, containerID string) (string,
 }
 
 // changeServiceReplicas changes the number of replicas for the given service ID based on direction.
-func changeServiceReplicas(cli *client.Client, serviceID string, direction string) error {
+func changeServiceReplicas(cli *client.Client, containerID string, direction string) error {
+
+	serviceID, err := findServiceIDFromContainer(cli, containerID)
+	if err != nil {
+		return fmt.Errorf("error finding service ID from container: %w", err)
+	}
+
 	ctx := context.Background()
 
 	// Get the service by ID
@@ -68,7 +70,8 @@ func changeServiceReplicas(cli *client.Client, serviceID string, direction strin
 			if currentReplicas > 1 {
 				newReplicas = currentReplicas - 1
 			} else {
-				return fmt.Errorf("service already has the minimum number of replicas: 1")
+				scaleToZero(cli, serviceID)
+				return nil				
 			}
 		} else {
 			return fmt.Errorf("invalid direction: %s", direction)
@@ -77,19 +80,8 @@ func changeServiceReplicas(cli *client.Client, serviceID string, direction strin
 		return fmt.Errorf("service mode is not replicated or replicas are not set")
 	}
 
-	// Update the number of replicas in the service spec
-	service.Spec.Mode.Replicated.Replicas = &newReplicas
+	scaleTo(cli, serviceID, newReplicas)
 
-	// Create an update options struct
-	updateOpts := types.ServiceUpdateOptions{}
-
-	// Update the service
-	response, err := cli.ServiceUpdate(ctx, service.ID, service.Version, service.Spec, updateOpts)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Service update response: %+v\n", response)
 	return nil
 }
 
@@ -169,4 +161,61 @@ func GetRunningContainers(ctx context.Context) ([]string, error) {
     }
 
     return containerIDs, nil
+}
+
+// scale service to number of replicas
+func scaleTo(cli *client.Client, serviceID string, replicas uint64) error {
+	ctx := context.Background()
+    service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
+    if err != nil {
+        return err
+    }
+
+    // Set the replicas to the desired number
+    service.Spec.Mode.Replicated.Replicas = &replicas
+
+    updateOpts := types.ServiceUpdateOptions{}
+    _, err = cli.ServiceUpdate(ctx, serviceID, service.Version, service.Spec, updateOpts)
+    if err != nil {
+        return err
+    }
+
+    fmt.Printf("Service %s scaled to %d replicas\n", serviceID, replicas)
+
+	return nil
+}
+
+
+func scaleToZero(cli *client.Client, serviceID string) error {
+	
+	ctx := context.Background()
+    service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
+    if err != nil {
+        return err
+    }
+
+    // Set the replicas to zero
+	scaleTo(cli, serviceID, 0)
+
+
+	// Get published port for the service (gets first one only)
+	var publishedPort uint32
+	if len(service.Endpoint.Ports) > 0 {
+        // Assuming we are interested in the first port
+        publishedPort = service.Endpoint.Ports[0].PublishedPort
+    } else {
+        return fmt.Errorf("no published ports found for service %s", serviceID)
+    }
+
+
+	// Setup BPF listener for the published port: to implement
+	cgroup_net_listen.SetupBPFListener(publishedPort)
+
+	// Scale the service back to 1 replica
+	scaleTo(cli, serviceID, 1)
+
+	// Sleep for 5 seconds to avoid reloading BPF program straight away
+	time.Sleep(5 * time.Second)
+
+	return nil
 }
