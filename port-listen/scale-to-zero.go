@@ -102,8 +102,12 @@ func (s *ScaleToZeroService) listenForEvents() {
                     continue
                 }
                 log.Printf("Packet detected on port %d, triggering scale action for service %s", port, serviceID)
-                // Here, call the scaling function, for example:
-                // scale.scaleTo(port, serviceID.(string), 1)
+                
+                // remove the port and scale back up
+                if err := s.RemovePort(port); err != nil {
+                    log.Printf("Failed to remove port %d: %v", port, err)
+                }
+
             } else {
                 log.Println("Received malformed perf event")
             }
@@ -150,7 +154,7 @@ func main() {
     sigs := make(chan os.Signal, 1)
     signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-    service, err := NewScaleToZeroService("wlp60s0") // Use "eth0" for example
+    service, err := NewScaleToZeroService("eth0") // Use "eth0" for example
 
     if err != nil {
         log.Fatalf("Failed to initialize scale to zero service: %v", err)
