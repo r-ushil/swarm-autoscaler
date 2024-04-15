@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"time"
+	"sync"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -11,14 +12,37 @@ import (
 	"github.com/docker/docker/client"
 )
 
-// ScaleService adjusts the service replicas based on the direction for the given container ID.
-func ScaleService(containerID string, direction string) error {
+
+
+type ScaleManager struct {
+	cli *client.Client
+	mu sync.Mutex
+}
+
+var instance *ScaleManager
+var once sync.Once
+
+func GetClient() *client.Client {
+	once.Do(func() {
+		instance = &ScaleManager{}
+		instance.initClient()
+	})
+	return instance.cli
+}
+
+func (manager *ScaleManager) initClient() {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		return fmt.Errorf("error creating Docker client: %w", err)
+		panic("Failed to create Docker client: " + err.Error()) // handle the error appropriately for your application
 	}
+	manager.cli = cli
+}
 
-	err = changeServiceReplicas(cli, containerID, direction)
+
+// ScaleService adjusts the service replicas based on the direction for the given container ID.
+func ScaleService(containerID string, direction string) error {
+	cli := GetClient()
+	err := changeServiceReplicas(cli, containerID, direction)
 	if err != nil {
 		return fmt.Errorf("error changing service replicas: %w", err)
 	}
@@ -46,13 +70,13 @@ func findServiceIDFromContainer(cli *client.Client, containerID string) (string,
 
 // changeServiceReplicas changes the number of replicas for the given service ID based on direction.
 func changeServiceReplicas(cli *client.Client, containerID string, direction string) error {
+	ctx := context.Background()
 
 	serviceID, err := findServiceIDFromContainer(cli, containerID)
 	if err != nil {
 		return fmt.Errorf("error finding service ID from container: %w", err)
 	}
-
-	ctx := context.Background()
+	
 
 	// Get the service by ID
 	service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
@@ -86,6 +110,68 @@ func changeServiceReplicas(cli *client.Client, containerID string, direction str
 	return nil
 }
 
+
+// scale service to number of replicas
+func scaleTo(cli *client.Client, serviceID string, replicas uint64) error {
+	ctx := context.Background()
+    service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
+    if err != nil {
+        return err
+    }
+
+    // Set the replicas to the desired number
+    service.Spec.Mode.Replicated.Replicas = &replicas
+
+    updateOpts := types.ServiceUpdateOptions{}
+    _, err = cli.ServiceUpdate(ctx, serviceID, service.Version, service.Spec, updateOpts)
+    if err != nil {
+        return err
+    }
+
+    fmt.Printf("Service %s scaled to %d replicas\n", serviceID, replicas)
+
+	return nil
+}
+
+func scaleToZero(cli *client.Client, serviceID string) error {
+	
+	ctx := context.Background()
+    service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
+    if err != nil {
+        return err
+    }
+
+    // Set the replicas to zero
+	scaleTo(cli, serviceID, 0)
+
+
+	// Get published port for the service (gets first one only)
+	var publishedPort uint32
+	if len(service.Endpoint.Ports) > 0 {
+        // Assuming we are interested in the first port
+        publishedPort = service.Endpoint.Ports[0].PublishedPort
+    } else {
+        return fmt.Errorf("no published ports found for service %s", serviceID)
+    }
+
+
+	// Setup BPF listener for the published port: to implement
+	//cgroup_net_listen.SetupBPFListener(publishedPort)
+
+	fmt.Println("Publishing port", publishedPort)
+	time.Sleep(10 * time.Second)
+
+	// Scale the service back to 1 replica
+	scaleTo(cli, serviceID, 1)
+
+	// Sleep for 5 seconds to avoid reloading BPF program straight away
+	time.Sleep(5 * time.Second)
+
+	return nil
+}
+
+
+
 // EventNotifier notifies about container start and stop events.
 type EventNotifier struct {
 	StartChan chan string
@@ -102,11 +188,7 @@ func NewEventNotifier() *EventNotifier {
 
 // ListenForEvents starts listening for Docker container start and stop events.
 func (en *EventNotifier) ListenForEvents(ctx context.Context) {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		fmt.Println("Error creating Docker client:", err)
-		return
-	}
+	cli := GetClient()
 
 	filters := filters.NewArgs(
 		filters.Arg("type", "container"),
@@ -146,10 +228,7 @@ func (en *EventNotifier) ListenForEvents(ctx context.Context) {
 
 // GetRunningContainers returns a slice of container IDs for all currently running containers.
 func GetRunningContainers(ctx context.Context) ([]string, error) {
-    cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-    if err != nil {
-        return nil, fmt.Errorf("error creating Docker client: %w", err)
-    }
+    cli := GetClient()
 
     containers, err := cli.ContainerList(ctx, container.ListOptions{})
     if err != nil {
@@ -162,64 +241,4 @@ func GetRunningContainers(ctx context.Context) ([]string, error) {
     }
 
     return containerIDs, nil
-}
-
-// scale service to number of replicas
-func scaleTo(cli *client.Client, serviceID string, replicas uint64) error {
-	ctx := context.Background()
-    service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
-    if err != nil {
-        return err
-    }
-
-    // Set the replicas to the desired number
-    service.Spec.Mode.Replicated.Replicas = &replicas
-
-    updateOpts := types.ServiceUpdateOptions{}
-    _, err = cli.ServiceUpdate(ctx, serviceID, service.Version, service.Spec, updateOpts)
-    if err != nil {
-        return err
-    }
-
-    fmt.Printf("Service %s scaled to %d replicas\n", serviceID, replicas)
-
-	return nil
-}
-
-
-func scaleToZero(cli *client.Client, serviceID string) error {
-	
-	ctx := context.Background()
-    service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
-    if err != nil {
-        return err
-    }
-
-    // Set the replicas to zero
-	scaleTo(cli, serviceID, 0)
-
-
-	// Get published port for the service (gets first one only)
-	var publishedPort uint32
-	if len(service.Endpoint.Ports) > 0 {
-        // Assuming we are interested in the first port
-        publishedPort = service.Endpoint.Ports[0].PublishedPort
-    } else {
-        return fmt.Errorf("no published ports found for service %s", serviceID)
-    }
-
-
-	// Setup BPF listener for the published port: to implement
-	//cgroup_net_listen.SetupBPFListener(publishedPort)
-
-	fmt.Println("Publishing port", publishedPort)
-	time.Sleep(10 * time.Second)
-
-	// Scale the service back to 1 replica
-	scaleTo(cli, serviceID, 1)
-
-	// Sleep for 5 seconds to avoid reloading BPF program straight away
-	time.Sleep(5 * time.Second)
-
-	return nil
 }
