@@ -3,11 +3,12 @@ package scale
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
-	"time"
-	"cgroup_net_listen"
 )
 
 // ScaleService adjusts the service replicas based on the direction for the given container ID.
@@ -150,7 +151,7 @@ func GetRunningContainers(ctx context.Context) ([]string, error) {
         return nil, fmt.Errorf("error creating Docker client: %w", err)
     }
 
-    containers, err := cli.ContainerList(ctx, types.ContainerListOptions{})
+    containers, err := cli.ContainerList(ctx, container.ListOptions{})
     if err != nil {
         return nil, fmt.Errorf("error listing Docker containers: %w", err)
     }
@@ -209,7 +210,10 @@ func scaleToZero(cli *client.Client, serviceID string) error {
 
 
 	// Setup BPF listener for the published port: to implement
-	cgroup_net_listen.SetupBPFListener(publishedPort)
+	//cgroup_net_listen.SetupBPFListener(publishedPort)
+
+	fmt.Println("Publishing port", publishedPort)
+	time.Sleep(10 * time.Second)
 
 	// Scale the service back to 1 replica
 	scaleTo(cli, serviceID, 1)

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"userspace-collection/scale" // Assuming scale.go is in this package
+	"scale" 
 )
 
 type Resource interface {
