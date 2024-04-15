@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 	"scale"
+	"bpf_port_listen"
 )
 
 type Resource interface {
@@ -74,6 +75,17 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	scale := scale.GetScaler()
+	portListener, err := bpf_port_listen.GetBPFListener("wlp60s0")
+	if err != nil {
+		fmt.Printf("Failed to setup BPF listener: %v\n", err)
+		os.Exit(1)
+	}
+
+	scale.SetPortListener(portListener)
+	portListener.SetScaler(scale)
+		
 
 	// Initialize and start listening for Docker container events
 	eventNotifier := scale.NewEventNotifier()

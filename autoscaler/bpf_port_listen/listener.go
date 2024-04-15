@@ -15,6 +15,11 @@ import (
     "github.com/vishvananda/netlink"
 )
 
+
+type Scaler interface {
+    ScaleTo(serviceID string, replicas uint64) error
+}
+
 var (
     portToServiceID sync.Map
     listenerInstance *BPFListener
@@ -22,11 +27,12 @@ var (
 )
 
 type BPFListener struct {
-    PerfReader *perf.Reader
-    PortsMap   *ebpf.Map
-    EventsMap  *ebpf.Map
-    Link       link.Link
-    closing    chan struct{}
+    PerfReader    *perf.Reader
+    PortsMap      *ebpf.Map
+    EventsMap     *ebpf.Map
+    Link          link.Link
+    closing       chan struct{}
+    Scaler Scaler
 }
 
 func GetBPFListener(ifaceName string) (*BPFListener, error) {
@@ -35,6 +41,10 @@ func GetBPFListener(ifaceName string) (*BPFListener, error) {
         listenerInstance, err = initBPFPortListener(ifaceName)
     })
     return listenerInstance, err
+}
+
+func (s *BPFListener) SetScaler(scale Scaler) {
+    s.Scaler = scale
 }
 
 func initBPFPortListener(ifaceName string) (*BPFListener, error) {
@@ -73,6 +83,7 @@ func initBPFPortListener(ifaceName string) (*BPFListener, error) {
         EventsMap:  objs.Events,
         Link:       qlen,
         closing:    make(chan struct{}),
+        Scaler:     nil,
     }
 
     go s.listenForEvents()
@@ -87,7 +98,7 @@ func (s *BPFListener) Close() {
 }
 
 func (s *BPFListener) listenForEvents() {
-    log.Println("Listening for perf events...")
+    log.Println("BPF program setup, listening for perf events...")
     for {
         select {
         case <-s.closing:
@@ -123,7 +134,8 @@ func (s *BPFListener) listenForEvents() {
     }
 }
 
-func (s *BPFListener) AddPort(port uint32, serviceID string) error {
+
+func (s *BPFListener) ListenOnPort(port uint32, serviceID string) error {
     // Storing the service ID in the local Go map.
     portToServiceID.Store(port, serviceID)
 
@@ -151,8 +163,8 @@ func (s *BPFListener) RemovePort(port uint32) error {
     fmt.Printf("Removed port %d from BPF listener\n", port)
     fmt.Printf("Scaling service %s back up\n", serviceID)
 
-    // Call to other service logic that needs to happen upon port removal.
-    // scale.ScaleTo(serviceID.(string), 1)
+    // Call scaler to scale back up to 1.
+    s.Scaler.ScaleTo(serviceID.(string), 1)
 
     return nil
 }

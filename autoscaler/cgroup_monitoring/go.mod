@@ -4,7 +4,7 @@ go 1.21.9
 
 require scale v0.0.0
 
-require bpf_port_listen v0.0.0 // indirect
+require bpf_port_listen v0.0.0
 
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect

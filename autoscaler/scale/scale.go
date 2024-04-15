@@ -9,34 +9,40 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
-
-	"bpf_port_listen"
 )
 
 
+type PortListener interface {
+	ListenOnPort(port uint32, serviceID string) error
+}
 
 type ScaleManager struct {
 	cli *client.Client
-	mu sync.Mutex
+	portListener PortListener
 }
 
 var instance *ScaleManager
 var once sync.Once
 
-func GetClient() *client.Client {
+func GetScaler() *ScaleManager {
 	once.Do(func() {
 		instance = &ScaleManager{}
-		instance.initClient()
+		instance.initScaler()
 	})
-	return instance.cli
+	return instance
 }
 
-func (manager *ScaleManager) initClient() {
+func (manager *ScaleManager) SetPortListener(listener PortListener) {
+	manager.portListener = listener
+}
+
+func (manager *ScaleManager) initScaler() {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		panic("Failed to create Docker client: " + err.Error()) // handle the error appropriately for your application
 	}
 	manager.cli = cli
+	manager.portListener = nil
 }
 
 
@@ -54,7 +60,7 @@ func ScaleService(containerID string, direction string) error {
 // findServiceIDFromContainer inspects the container to find its associated service ID.
 func findServiceIDFromContainer(containerID string) (string, error) {
 	ctx := context.Background()
-	cli := GetClient()
+	cli := instance.cli
 	container, err := cli.ContainerInspect(ctx, containerID)
 	if err != nil {
 		return "", err
@@ -72,7 +78,7 @@ func findServiceIDFromContainer(containerID string) (string, error) {
 // changeServiceReplicas changes the number of replicas for the given service ID based on direction.
 func changeServiceReplicas(containerID string, direction string) error {
 	ctx := context.Background()
-	cli := GetClient()
+	cli := instance.cli
 
 	serviceID, err := findServiceIDFromContainer(containerID)
 	if err != nil {
@@ -97,27 +103,17 @@ func changeServiceReplicas(containerID string, direction string) error {
 				newReplicas = currentReplicas - 1
 			} else {
 				// scale to 0
-				ScaleTo(serviceID, 0)
+				scaleTo(serviceID, 0)
 
 				port, err := getPublishedPort(serviceID)
 				if err != nil {
 					return err
 				}
 
-				fmt.Printf("Adding port %d from BPF listener\n", port)
-
-				// get BPF port listener instance
-				listener, err := bpf_port_listen.GetBPFListener("wlp60s0")
-				if err != nil {
-					return err
+				// add port to listener
+				if err := instance.portListener.ListenOnPort(port, serviceID); err != nil {
+					return fmt.Errorf("failed to listen on port: %w", err)
 				}
-
-				// add port to BPF listener
-				if err := listener.AddPort(port, serviceID); err != nil {
-					return err
-				}
-
-				fmt.Printf("Added port %d to BPF listener\n", port)	
 				
 				return nil
 			}
@@ -128,16 +124,20 @@ func changeServiceReplicas(containerID string, direction string) error {
 		return fmt.Errorf("service mode is not replicated or replicas are not set")
 	}
 
-	ScaleTo(serviceID, newReplicas)
+	scaleTo(serviceID, newReplicas)
 
 	return nil
 }
 
+func (s *ScaleManager) ScaleTo(serviceID string, replicas uint64) error {
+	return scaleTo(serviceID, replicas)
+}
+
 
 // scale service to number of replicas
-func ScaleTo(serviceID string, replicas uint64) error {
+func scaleTo(serviceID string, replicas uint64) error {
 	ctx := context.Background()
-	cli := GetClient()
+	cli := instance.cli
 
     service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
     if err != nil {
@@ -161,7 +161,7 @@ func ScaleTo(serviceID string, replicas uint64) error {
 
 func getPublishedPort(serviceID string) (uint32, error) {
 	ctx := context.Background()
-	cli := GetClient()
+	cli := instance.cli
 
 	service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
 	if err != nil {
@@ -189,7 +189,7 @@ type EventNotifier struct {
 }
 
 // NewEventNotifier creates and returns a new EventNotifier.
-func NewEventNotifier() *EventNotifier {
+func (s *ScaleManager) NewEventNotifier() *EventNotifier {
 	return &EventNotifier{
 		StartChan: make(chan string, 10), // Buffered channels for start and stop events
 		StopChan:  make(chan string, 10),
@@ -198,7 +198,7 @@ func NewEventNotifier() *EventNotifier {
 
 // ListenForEvents starts listening for Docker container start and stop events.
 func (en *EventNotifier) ListenForEvents(ctx context.Context) {
-	cli := GetClient()
+	cli := instance.cli
 
 	filters := filters.NewArgs(
 		filters.Arg("type", "container"),
@@ -237,8 +237,8 @@ func (en *EventNotifier) ListenForEvents(ctx context.Context) {
 }
 
 // GetRunningContainers returns a slice of container IDs for all currently running containers.
-func GetRunningContainers(ctx context.Context) ([]string, error) {
-    cli := GetClient()
+func (s ScaleManager) GetRunningContainers(ctx context.Context) ([]string, error) {
+    cli := instance.cli
 
     containers, err := cli.ContainerList(ctx, container.ListOptions{})
     if err != nil {
