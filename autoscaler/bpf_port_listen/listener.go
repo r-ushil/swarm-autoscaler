@@ -1,4 +1,4 @@
-package main
+package bpf_port_listen
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang BPF bpf/tc-port-monitor.c -- -I/usr/include/bpf
 
@@ -7,9 +7,7 @@ import (
     "fmt"
     "log"
     "os"
-    "os/signal"
-    "syscall"
-	"sync"
+    "sync"
     "github.com/cilium/ebpf"
     "github.com/cilium/ebpf/link"
     "github.com/cilium/ebpf/perf"
@@ -19,9 +17,11 @@ import (
 
 var (
     portToServiceID sync.Map
+    listenerInstance *BPFListener
+    once sync.Once
 )
 
-type ScaleToZeroService struct {
+type BPFListener struct {
     PerfReader *perf.Reader
     PortsMap   *ebpf.Map
     EventsMap  *ebpf.Map
@@ -29,7 +29,15 @@ type ScaleToZeroService struct {
     closing    chan struct{}
 }
 
-func NewScaleToZeroService(ifaceName string) (*ScaleToZeroService, error) {
+func GetBPFListener(ifaceName string) (*BPFListener, error) {
+    var err error
+    once.Do(func() {
+        listenerInstance, err = initBPFPortListener(ifaceName)
+    })
+    return listenerInstance, err
+}
+
+func initBPFPortListener(ifaceName string) (*BPFListener, error) {
     // Allow the current process to lock memory for eBPF resources.
     if err := rlimit.RemoveMemlock(); err != nil {
         return nil, fmt.Errorf("failed to remove memlock limit: %v", err)
@@ -59,7 +67,7 @@ func NewScaleToZeroService(ifaceName string) (*ScaleToZeroService, error) {
         return nil, fmt.Errorf("failed to create perf event reader: %v", err)
     }
 
-    s := &ScaleToZeroService{
+    s := &BPFListener{
         PerfReader: pr,
         PortsMap:   objs.PortsMap,
         EventsMap:  objs.Events,
@@ -72,13 +80,13 @@ func NewScaleToZeroService(ifaceName string) (*ScaleToZeroService, error) {
     return s, nil
 }
 
-func (s *ScaleToZeroService) Close() {
+func (s *BPFListener) Close() {
     close(s.closing)
     s.Link.Close()
     s.PerfReader.Close()
 }
 
-func (s *ScaleToZeroService) listenForEvents() {
+func (s *BPFListener) listenForEvents() {
     log.Println("Listening for perf events...")
     for {
         select {
@@ -115,24 +123,21 @@ func (s *ScaleToZeroService) listenForEvents() {
     }
 }
 
-
-func (s *ScaleToZeroService) AddPort(port uint32, serviceID string) error {
+func (s *BPFListener) AddPort(port uint32, serviceID string) error {
     // Storing the service ID in the local Go map.
     portToServiceID.Store(port, serviceID)
 
-    // Preparing the value to add to the eBPF map. You can adjust the value logic as needed.
-    var value uint32 = 1 // Example value, adjust as necessary for your use case.
+    var value uint32 = 1 // need a fixed value for the eBPF map
     
-    // Adding the port to the eBPF map.
     if err := s.PortsMap.Update(port, value, ebpf.UpdateAny); err != nil {
         return fmt.Errorf("failed to add port to BPF map: %v", err)
     }
     return nil
 }
 
-func (s *ScaleToZeroService) RemovePort(port uint32) error {
+func (s *BPFListener) RemovePort(port uint32) error {
     // Removing the port from the local Go map.
-    _, ok := portToServiceID.Load(port)
+    serviceID, ok := portToServiceID.Load(port)
     if !ok {
         return fmt.Errorf("service ID for port %d not found", port)
     }
@@ -143,29 +148,11 @@ func (s *ScaleToZeroService) RemovePort(port uint32) error {
         return fmt.Errorf("failed to remove port from BPF map: %v", err)
     }
 
+    fmt.Printf("Removed port %d from BPF listener\n", port)
+    fmt.Printf("Scaling service %s back up\n", serviceID)
+
     // Call to other service logic that needs to happen upon port removal.
-    // scale.scaleTo(port, serviceID.(string), 1)
+    // scale.ScaleTo(serviceID.(string), 1)
 
     return nil
-}
-
-
-func main() {
-    sigs := make(chan os.Signal, 1)
-    signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
-    service, err := NewScaleToZeroService("eth0") // Use "eth0" for example
-
-    if err != nil {
-        log.Fatalf("Failed to initialize scale to zero service: %v", err)
-    }
-
-     // Add port 8080 with service ID "my-service"
-     if err := service.AddPort(8080, "my-service"); err != nil {
-        log.Fatalf("Failed to add port to scale to zero service: %v", err)
-    }
-
-    <-sigs // Wait for interrupt signal
-    log.Println("Shutting down...")
-    service.Close()
 }
