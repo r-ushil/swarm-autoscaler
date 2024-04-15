@@ -43,6 +43,7 @@ func main() {
 	lowerCPUUtil := flag.Float64("lower-cpu", -1.0, "Lower CPU utilization threshold in percentage")
 	upperCPUUtil := flag.Float64("upper-cpu", -1.0, "Upper CPU utilization threshold in percentage")
 	collectionPeriodPtr := flag.Duration("collection-period", 10*time.Second, "Period between memory usage checks for each container")
+	ifaceName := flag.String("iface", "eth0", "Network interface name for BPF port listener")
 
 	flag.Parse()
 
@@ -77,7 +78,7 @@ func main() {
 	defer cancel()
 
 	scale := scale.GetScaler()
-	portListener, err := bpf_port_listen.GetBPFListener("wlp60s0")
+	portListener, err := bpf_port_listen.GetBPFListener(*ifaceName)
 	if err != nil {
 		fmt.Printf("Failed to setup BPF listener: %v\n", err)
 		os.Exit(1)
@@ -87,11 +88,9 @@ func main() {
 	portListener.SetScaler(scale)
 		
 
-	// Initialize and start listening for Docker container events
 	eventNotifier := scale.NewEventNotifier()
 	go eventNotifier.ListenForEvents(ctx)
 
-	// Initialize monitoring for already running containers
 	runningContainers, err := scale.GetRunningContainers(ctx)
 	if err != nil {
 		fmt.Printf("Failed to get running containers: %v\n", err)
@@ -132,7 +131,6 @@ func startMonitoring(parentCtx context.Context, containerID string, resource Res
 		// Wait before we immediately start monitoring / scaling
 		time.Sleep(5 * time.Second)
         
-        // Execute the Monitor method as a goroutine
         go resource.Monitor(monitorCtx, containerID, collectionPeriod)
     }
 }
