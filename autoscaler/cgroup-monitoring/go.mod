@@ -31,4 +31,4 @@ require (
 	google.golang.org/protobuf v1.33.0 // indirect
 )
 
-replace scale => ../../scale
+replace scale => ../scale
