@@ -144,6 +144,8 @@ func (s *BPFListener) ListenOnPort(port uint32, serviceID string) error {
     if err := s.PortsMap.Update(port, value, ebpf.UpdateAny); err != nil {
         return fmt.Errorf("failed to add port to BPF map: %v", err)
     }
+
+    fmt.Printf("Listening on port %d for service %s\n", port, serviceID)
     return nil
 }
 

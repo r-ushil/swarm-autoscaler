@@ -108,9 +108,11 @@ func main() {
 			select {
 			case containerID := <-eventNotifier.StartChan:
 				// Start monitoring for the new container
+				fmt.Printf("Monitoring container: %s\n", containerID)
 				startMonitoring(ctx, containerID, resource, *collectionPeriodPtr)
 			case containerID := <-eventNotifier.StopChan:
 				// Stop monitoring for the stopped container
+				fmt.Printf("Stopping monitoring for container: %s\n", containerID)
 				if cancelFunc, exists := monitoringCtxMap.Load(containerID); exists {
 					cancelFunc.(context.CancelFunc)()
 					monitoringCtxMap.Delete(containerID)
@@ -127,9 +129,6 @@ func startMonitoring(parentCtx context.Context, containerID string, resource Res
     if _, exists := monitoringCtxMap.Load(containerID); !exists {
         monitorCtx, monitorCancel := context.WithCancel(parentCtx)
         monitoringCtxMap.Store(containerID, monitorCancel)
-
-		// Wait before we immediately start monitoring / scaling
-		time.Sleep(5 * time.Second)
         
         go resource.Monitor(monitorCtx, containerID, collectionPeriod)
     }
@@ -142,13 +141,14 @@ func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collect
 		return
 	}
 
+	fmt.Printf("Started monitoring CPU for container %s\n", containerID)
+
 	ticker := time.NewTicker(collectionPeriod)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Printf("Stopped monitoring CPU for container %s\n", containerID)
 			return
 		case <-ticker.C:
 			currentUsageUsec, err := readCPUUsage(containerID)

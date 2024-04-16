@@ -102,8 +102,6 @@ func changeServiceReplicas(containerID string, direction string) error {
 			if currentReplicas > 1 {
 				newReplicas = currentReplicas - 1
 			} else {
-				// scale to 0
-				scaleTo(serviceID, 0)
 
 				port, err := getPublishedPort(serviceID)
 				if err != nil {
@@ -114,6 +112,9 @@ func changeServiceReplicas(containerID string, direction string) error {
 				if err := instance.portListener.ListenOnPort(port, serviceID); err != nil {
 					return fmt.Errorf("failed to listen on port: %w", err)
 				}
+
+				// scale to 0
+				scaleTo(serviceID, 0)
 				
 				return nil
 			}
@@ -249,6 +250,8 @@ func (s ScaleManager) GetRunningContainers(ctx context.Context) ([]string, error
     for _, container := range containers {
         containerIDs = append(containerIDs, container.ID)
     }
+
+	fmt.Printf("Found %d running containers\n", len(containerIDs))
 
     return containerIDs, nil
 }
