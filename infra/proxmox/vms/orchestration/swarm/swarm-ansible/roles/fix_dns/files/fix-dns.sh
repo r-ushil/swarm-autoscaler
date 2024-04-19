@@ -17,3 +17,4 @@ nmcli con up "cloud-init eth0"
 sudo systemctl restart NetworkManager
 
 yum update -y
+

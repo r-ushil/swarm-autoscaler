@@ -1,6 +1,0 @@
-- name: Setup DNS and Install Docker on fedora VMs
-  hosts: fedora
-  become: true
-  roles:
-    - docker
-

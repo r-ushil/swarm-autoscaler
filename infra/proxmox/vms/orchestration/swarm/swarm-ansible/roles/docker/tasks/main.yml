@@ -71,3 +71,8 @@
     state: latest
   when: ansible_facts['os_family'] == "RedHat"
 
+- name: Ensure Docker is started and enabled
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: yes

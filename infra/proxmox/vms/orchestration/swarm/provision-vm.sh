@@ -1,13 +1,13 @@
 #!/bin/bash -xe
 
 NODE_NAME="octopus2"
-TEMPLATE_VMID=9001
+TEMPLATE_VMID=9002
 CI_USER="swarm"
 CI_PASSWORD="swarm"
 SSH_KEY_PATH="${HOME}/.ssh/id_rsa.pub"
 BASE_IP="192.168.2."
 GW="${BASE_IP}1"
-VMID_BASE=200
+VMID_BASE=400
 
 
 qm set ${TEMPLATE_VMID} --sshkey "${SSH_KEY_PATH}"
