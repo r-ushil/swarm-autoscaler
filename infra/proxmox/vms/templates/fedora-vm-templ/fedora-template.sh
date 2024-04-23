@@ -15,7 +15,8 @@ apt update && apt install libguestfs-tools -y
 wget https://download.fedoraproject.org/pub/fedora/linux/releases/39/Cloud/x86_64/images/${IMAGE_NAME}
 
 virt-customize -a ${IMAGE_NAME} --edit '/etc/ssh/sshd_config:s/^#PermitRootLogin no/PermitRootLogin yes/'
-sudo virt-customize -a ${IMAGE_NAME} --run-command 'echo -e "disable_root: 0\nssh_pwauth: 1" >> /etc/cloud/cloud.cfg'
+virt-customize -a ${IMAGE_NAME} --run-command 'echo -e "disable_root: 0\nssh_pwauth: 1" >> /etc/cloud/cloud.cfg'
+virt-customize -a ${IMAGE_NAME} --run-command 'echo -e "manage_etc_hosts: false" >> /etc/cloud/cloud.cfg'
 virt-customize -a ${IMAGE_NAME} --install qemu-guest-agent
 virt-customize -a ${IMAGE_NAME} --root-password password:${ROOT_PASSWD}
 

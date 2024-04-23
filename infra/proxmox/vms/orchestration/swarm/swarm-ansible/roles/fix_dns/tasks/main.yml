@@ -8,6 +8,21 @@
 - name: Run fix-dns.sh
   command: /usr/local/bin/fix-dns.sh
 
+# doesn't work, to fix. cloud-init fedora doesn't let you edit /etc/hosts
+- name: Update /etc/hosts with custom entries
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ item.ip }} {{ item.host }}"
+    regexp: "^{{ item.ip }}\\s+{{ item.host }}"
+    state: present
+    create: no
+    backup: yes
+  loop:
+    - { ip: "192.168.2.3", host: "monitoring" }
+    - { ip: "192.168.2.4", host: "swarm-vm1" }
+    - { ip: "192.168.2.5", host: "swarm-vm2" }
+    - { ip: "192.168.2.6", host: "swarm-vm3" }
+
 - name: Reboot the machine
   ansible.builtin.reboot:
     msg: "Rebooting after DNS fix script execution"

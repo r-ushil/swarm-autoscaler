@@ -1,0 +1,36 @@
+---
+- name: Ensure the destination directory exists
+  ansible.builtin.file:
+    path: /root/promgraf
+    state: directory
+    mode: '0755'
+                        
+- name: Copy Prometheus and Grafana Docker Compose files
+  copy:
+    src: "{{ item.src }}"
+    dest: "/root/promgraf/{{ item.dest }}"
+  loop:
+    - { src: 'docker-compose.yml', dest: 'docker-compose.yml' }
+    - { src: 'prometheus.yml', dest: 'prometheus.yml' }
+
+- name: Copy Grafana dir
+  copy:
+    src: "grafana"
+    dest: "/root/promgraf/"
+    owner: "472"
+    group: "472"
+    mode: preserve
+    directory_mode: '0755'
+
+- name: Set permissions for Grafana dir
+  ansible.builtin.file:
+    path: "/root/promgraf/"
+    state: directory
+    recurse: true
+    owner: "472"
+    group: "472"
+
+- name: Run Docker Compose for Prometheus and Grafana 
+  command: docker compose up -d
+  args:
+    chdir: /root/promgraf

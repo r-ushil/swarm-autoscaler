@@ -13,8 +13,20 @@ VMID_BASE=400
 qm set ${TEMPLATE_VMID} --sshkey "${SSH_KEY_PATH}"
 qm set ${TEMPLATE_VMID} --ciuser "${CI_USER}" --cipassword "${CI_PASSWORD}"
 
+# provision monitoring VM
+
+IP="${BASE_IP}3"
+IPCONFIG="ip=${IP}/24,gw=${GW}"
+VM_NAME="monitoring"
+
+echo "Creating VM: ${VM_NAME} with IP: ${IP} and VMID: ${VMID_BASE}"
+qm clone ${TEMPLATE_VMID} ${VMID_BASE} --name "${VM_NAME}" --full true
+qm set ${VMID_BASE} --ipconfig0 "${IPCONFIG}"
+qm start ${VMID_BASE}
+
+# provision swarm VMs
 for COUNT in {1..3}; do
-  IP="${BASE_IP}$((COUNT + 2))"
+  IP="${BASE_IP}$((COUNT + 3))"
   VMID=$(($VMID_BASE + $COUNT))
   IPCONFIG="ip=${IP}/24,gw=${GW}"
   VM_NAME="swarm-vm${COUNT}"

@@ -1,0 +1,16 @@
+---
+- name: Ensure the destination directory exists
+  ansible.builtin.file:
+    path: /root/cadvisor
+    state: directory
+    mode: '0755'
+
+- name: Copy cAdvisor Docker Compose file
+  copy:
+    src: docker-compose.yml
+    dest: /root/cadvisor/docker-compose.yml
+
+- name: Run Docker Compose for cAdvisor
+  command: docker compose up -d
+  args:
+    chdir: /root/cadvisor
