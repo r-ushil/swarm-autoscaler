@@ -85,11 +85,13 @@ func updateServiceConstraints(service swarm.Service, add bool) error {
 	// Update the service with the new constraints
 	serviceSpec := service.Spec
 	if add {
-		serviceSpec.TaskTemplate.Placement = &swarm.Placement{
-			Constraints: []string{"node.role==manager"},
-		}
+		fmt.Printf("Adding constraint to service %s to run on manager node\n", service.ID)
+		serviceSpec.TaskTemplate.Placement.Constraints = []string{"node.role==manager"}
 	} else {
-		serviceSpec.TaskTemplate.Placement = nil
+		if serviceSpec.TaskTemplate.Placement.Constraints != nil {
+			fmt.Printf("Removing constraint from service %s to run on manager node\n", service.ID)
+			serviceSpec.TaskTemplate.Placement.Constraints = nil
+		}
 	}
 
 	_, err := cli.ServiceUpdate(ctx, service.ID, service.Version, serviceSpec, types.ServiceUpdateOptions{})
