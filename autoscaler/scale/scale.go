@@ -3,11 +3,13 @@ package scale
 import (
 	"context"
 	"fmt"
-	"time"
 	"sync"
+	"time"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
 )
 
@@ -75,6 +77,26 @@ func findServiceIDFromContainer(containerID string) (string, error) {
 	return serviceID, nil
 }
 
+
+func updateServiceConstraints(service swarm.Service, add bool) error {
+	ctx := context.Background()
+	cli := instance.cli
+
+	// Update the service with the new constraints
+	serviceSpec := service.Spec
+	if add {
+		serviceSpec.TaskTemplate.Placement = &swarm.Placement{
+			Constraints: []string{"node.role==manager"},
+		}
+	} else {
+		serviceSpec.TaskTemplate.Placement = nil
+	}
+
+	_, err := cli.ServiceUpdate(ctx, service.ID, service.Version, serviceSpec, types.ServiceUpdateOptions{})
+
+	return err
+}
+
 // changeServiceReplicas changes the number of replicas for the given service ID based on direction.
 func changeServiceReplicas(containerID string, direction string) error {
 	ctx := context.Background()
@@ -96,11 +118,23 @@ func changeServiceReplicas(containerID string, direction string) error {
 	if service.Spec.Mode.Replicated != nil && service.Spec.Mode.Replicated.Replicas != nil {
 		currentReplicas := *service.Spec.Mode.Replicated.Replicas
 		if direction == "over" {
+			if currentReplicas == 1 {
+				// Add a constraint to run on a manager node
+				if err := updateServiceConstraints(service, false); err != nil {
+					return fmt.Errorf("error adding constraint to service: %w", err)
+				}
+			}
 			newReplicas = currentReplicas + 1
 		} else if direction == "under" {
 			// Ensure we don't go below 1 replica
 			if currentReplicas > 1 {
 				newReplicas = currentReplicas - 1
+				if newReplicas == 1 {
+					// Add a constraint to run on a manager node
+					if err := updateServiceConstraints(service, true); err != nil {
+						return fmt.Errorf("error adding constraint to service: %w", err)
+					}
+				}
 			} else {
 
 				port, err := getPublishedPort(serviceID)
