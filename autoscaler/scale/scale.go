@@ -305,7 +305,7 @@ func (s ScaleManager) GetRunningContainers(ctx context.Context) ([]string, error
 				currentReplicas := *service.Spec.Mode.Replicated.Replicas
 				if currentReplicas == 1 {
 					// Add a constraint to run on a manager node
-					if err := updateServiceConstraints(service, false); err != nil {
+					if err := updateServiceConstraints(service, true); err != nil {
 						fmt.Printf("Error adding constraint to service: %v\n", err)
 					}
 				}
