@@ -50,7 +50,13 @@ func (manager *ScaleManager) initScaler() {
 
 // ScaleService adjusts the service replicas based on the direction for the given container ID.
 func ScaleService(containerID string, direction string) error {
-	err := changeServiceReplicas(containerID, direction)
+
+	serviceID, err := findServiceIDFromContainer(containerID)
+	if err != nil {
+		return fmt.Errorf("error finding service ID from container: %w", err)
+	}
+
+	err = ChangeServiceReplicas(serviceID, direction)
 	if err != nil {
 		return fmt.Errorf("error changing service replicas: %w", err)
 	}
@@ -100,14 +106,9 @@ func updateServiceConstraints(service swarm.Service, add bool) error {
 }
 
 // changeServiceReplicas changes the number of replicas for the given service ID based on direction.
-func changeServiceReplicas(containerID string, direction string) error {
+func ChangeServiceReplicas(serviceID string, direction string) error {
 	ctx := context.Background()
 	cli := instance.cli
-
-	serviceID, err := findServiceIDFromContainer(containerID)
-	if err != nil {
-		return fmt.Errorf("error finding service ID from container: %w", err)
-	}
 
 	// Get the service by ID
 	service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
