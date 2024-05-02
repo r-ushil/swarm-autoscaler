@@ -1,35 +1,60 @@
 package main
 
 import (
-	"encoding/json"
+	"bpf_port_listen"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"scale"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"scale"
-	"bpf_port_listen"
+
+	"gopkg.in/yaml.v2"
 )
 
+type Config struct {
+	LowerCPU         float64           `yaml:"lower-cpu"`
+	UpperCPU         float64           `yaml:"upper-cpu"`
+	LowerMB          int64             `yaml:"lower-mm"`
+	UpperMB          int64             `yaml:"upper-mm"`
+	LowerGB          int64             `yaml:"lower-mg"`
+	UpperGB          int64             `yaml:"upper-mg"`
+	CollectionPeriod string            `yaml:"collection-period"`
+	Iface            string            `yaml:"iface"`
+	Managers         map[string]string `yaml:"managers"`
+	Workers          map[string]string `yaml:"workers"`
+}
+
+// SwarmNodeInfo represents the node-specific information
+type SwarmNodeInfo struct {
+	AutoscalerManager bool
+	OtherNodes        []SwarmNode
+}
+
+type SwarmNode struct {
+	Hostname string
+	IP       string
+}
+
 type Resource interface {
-    Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration)
+	Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration)
 }
 
 type CPUResource struct {
-    LowerUtil float64
-    UpperUtil float64
+	LowerUtil float64
+	UpperUtil float64
 }
 
 type MemoryResource struct {
-    LowerLimit int64
-    UpperLimit int64
+	LowerLimit int64
+	UpperLimit int64
 }
-
 
 const cgroupDir = "/sys/fs/cgroup/system.slice" // Path to the Docker cgroup directory
 
@@ -38,40 +63,51 @@ var (
 )
 
 func main() {
-	lowerMBPtr := flag.Int64("lower-mm", -1, "Lower memory threshold in MB")
-	upperMBPtr := flag.Int64("upper-mm", -1, "Upper memory threshold in MB")
-	lowerGBPtr := flag.Int64("lower-mg", -1, "Lower memory threshold in GB")
-	upperGBPtr := flag.Int64("upper-mg", -1, "Upper memory threshold in GB")
-	lowerCPUUtil := flag.Float64("lower-cpu", -1.0, "Lower CPU utilization threshold in percentage")
-	upperCPUUtil := flag.Float64("upper-cpu", -1.0, "Upper CPU utilization threshold in percentage")
-	collectionPeriodPtr := flag.Duration("collection-period", 10*time.Second, "Period between memory usage checks for each container")
-	ifaceName := flag.String("iface", "eth0", "Network interface name for BPF port listener")
+	configPath := flag.String("config", "", "Path to the configuration file")
 
 	flag.Parse()
 
+	config, err := loadConfig(*configPath)
+	if err != nil {
+		fmt.Printf("Failed to load configuration: %v\n", err)
+		os.Exit(1)
+	}
+
+	collectionPeriod, err := time.ParseDuration(config.CollectionPeriod)
+	if err != nil {
+		fmt.Printf("Failed to parse collection period: %v\n", err)
+		os.Exit(1)
+	}
+
+	swarmNodeInfo, err := createswarmNodeInfo(config)
+	if err != nil {
+		fmt.Printf("Failed to get Swarm node info: %v\n", err)
+		os.Exit(1)
+	}
+
 	var resource Resource
-    memoryLimitSpecified := *lowerMBPtr >= 0 || *upperMBPtr >= 0 || *lowerGBPtr >= 0 || *upperGBPtr >= 0
-    cpuMonitoringEnabled := *lowerCPUUtil >= 0 || *upperCPUUtil >= 0
+	memoryLimitSpecified := config.LowerMB >= 0 || config.UpperMB >= 0 || config.LowerGB >= 0 || config.UpperGB >= 0
+	cpuMonitoringEnabled := config.LowerCPU >= 0 || config.UpperCPU >= 0
 
-    if cpuMonitoringEnabled && memoryLimitSpecified {
-        fmt.Println("Please specify thresholds for either CPU or memory, not both.")
-        os.Exit(1)
-    }
+	if cpuMonitoringEnabled && memoryLimitSpecified {
+		fmt.Println("Please specify thresholds for either CPU or memory, not both.")
+		os.Exit(1)
+	}
 
-    if cpuMonitoringEnabled {
-		resource = &CPUResource{LowerUtil: *lowerCPUUtil, UpperUtil: *upperCPUUtil}
+	if cpuMonitoringEnabled {
+		resource = &CPUResource{LowerUtil: config.LowerCPU, UpperUtil: config.UpperCPU}
 	} else if memoryLimitSpecified {
 		var lowerLimit, upperLimit int64
 		// Explicitly choose GB over MB if both are provided, instead of summing them
-		if *lowerGBPtr > 0 {
-			lowerLimit = *lowerGBPtr * 1024
+		if config.LowerGB > 0 {
+			lowerLimit = config.LowerGB * 1024
 		} else {
-			lowerLimit = *lowerMBPtr
+			lowerLimit = config.LowerMB
 		}
-		if *upperGBPtr > 0 {
-			upperLimit = *upperGBPtr * 1024
+		if config.UpperGB > 0 {
+			upperLimit = config.UpperGB * 1024
 		} else {
-			upperLimit = *upperMBPtr
+			upperLimit = config.UpperMB
 		}
 		resource = &MemoryResource{LowerLimit: lowerLimit, UpperLimit: upperLimit}
 	}
@@ -80,7 +116,7 @@ func main() {
 	defer cancel()
 
 	scale := scale.GetScaler()
-	portListener, err := bpf_port_listen.GetBPFListener(*ifaceName)
+	portListener, err := bpf_port_listen.GetBPFListener(config.Iface)
 	if err != nil {
 		fmt.Printf("Failed to setup BPF listener: %v\n", err)
 		os.Exit(1)
@@ -88,7 +124,6 @@ func main() {
 
 	scale.SetPortListener(portListener)
 	portListener.SetScaler(scale)
-		
 
 	eventNotifier := scale.NewEventNotifier()
 	go eventNotifier.ListenForEvents(ctx)
@@ -99,9 +134,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	
 	for _, containerID := range runningContainers {
 		fmt.Printf("Monitoring container: %s\n", containerID)
-		startMonitoring(ctx, containerID, resource, *collectionPeriodPtr)
+		startMonitoring(ctx, containerID, resource, collectionPeriod)
 	}
 
 	// Handle container start and stop events
@@ -111,7 +147,7 @@ func main() {
 			case containerID := <-eventNotifier.StartChan:
 				// Start monitoring for the new container
 				fmt.Printf("Monitoring container: %s\n", containerID)
-				startMonitoring(ctx, containerID, resource, *collectionPeriodPtr)
+				startMonitoring(ctx, containerID, resource, collectionPeriod)
 			case containerID := <-eventNotifier.StopChan:
 				// Stop monitoring for the stopped container
 				fmt.Printf("Stopping monitoring for container: %s\n", containerID)
@@ -131,17 +167,20 @@ func main() {
 		}
 	}()
 
+	fmt.Println("Swarm node info:", swarmNodeInfo)
+
 	// Wait for a signal to terminate
 	<-ctx.Done()
+
 }
 
 func startMonitoring(parentCtx context.Context, containerID string, resource Resource, collectionPeriod time.Duration) {
-    if _, exists := monitoringCtxMap.Load(containerID); !exists {
-        monitorCtx, monitorCancel := context.WithCancel(parentCtx)
-        monitoringCtxMap.Store(containerID, monitorCancel)
-        
-        go resource.Monitor(monitorCtx, containerID, collectionPeriod)
-    }
+	if _, exists := monitoringCtxMap.Load(containerID); !exists {
+		monitorCtx, monitorCancel := context.WithCancel(parentCtx)
+		monitoringCtxMap.Store(containerID, monitorCancel)
+
+		go resource.Monitor(monitorCtx, containerID, collectionPeriod)
+	}
 }
 
 func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration) {
@@ -170,12 +209,12 @@ func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collect
 			cpuUtilization := (float64(usageDeltaUsec) / collectionPeriod.Seconds()) / 1e6 * 100
 
 			direction := determineScalingDirection(cpuUtilization, cpu.LowerUtil, cpu.UpperUtil)
-            if direction != "" {
-                fmt.Printf("ContainerID: %s, CPU Utilization: %.2f%%, Direction: %s\n", containerID, cpuUtilization, direction)
-                if err := scale.ScaleService(containerID, direction); err != nil {
-                    fmt.Printf("Error scaling service for container %s: %v\n", containerID, err)
-                }
-            }
+			if direction != "" {
+				fmt.Printf("ContainerID: %s, CPU Utilization: %.2f%%, Direction: %s\n", containerID, cpuUtilization, direction)
+				if err := scale.ScaleService(containerID, direction); err != nil {
+					fmt.Printf("Error scaling service for container %s: %v\n", containerID, err)
+				}
+			}
 
 			lastUsageUsec = currentUsageUsec
 		}
@@ -216,32 +255,31 @@ func (mem *MemoryResource) Monitor(ctx context.Context, containerID string, coll
 
 // determineScalingDirection decides the scaling direction based on usage and thresholds.
 func determineScalingDirection(currentValue float64, lowerThreshold, upperThreshold float64) string {
-    if currentValue > upperThreshold {
-        return "over"
-    } else if currentValue < lowerThreshold {
-        return "under"
-    }
-    return "" // No action needed if within thresholds
+	if currentValue > upperThreshold {
+		return "over"
+	} else if currentValue < lowerThreshold {
+		return "under"
+	}
+	return "" // No action needed if within thresholds
 }
 
 func readMemoryUsage(containerID string) (int64, error) {
-    memCurrentPath := filepath.Join(cgroupDir, fmt.Sprintf("docker-%s.scope/memory.current", containerID))
-    content, err := os.ReadFile(memCurrentPath)
-    if err != nil {
-        return 0, err
-    }
+	memCurrentPath := filepath.Join(cgroupDir, fmt.Sprintf("docker-%s.scope/memory.current", containerID))
+	content, err := os.ReadFile(memCurrentPath)
+	if err != nil {
+		return 0, err
+	}
 
-    // Parse the memory usage value from the file content
-    memUsageBytes, parseErr := strconv.ParseInt(strings.TrimSpace(string(content)), 10, 64)
-    if parseErr != nil {
-        return 0, parseErr
-    }
+	// Parse the memory usage value from the file content
+	memUsageBytes, parseErr := strconv.ParseInt(strings.TrimSpace(string(content)), 10, 64)
+	if parseErr != nil {
+		return 0, parseErr
+	}
 
-    // Convert the memory usage from bytes to MB and return
-    memUsageMB := memUsageBytes / (1024 * 1024)
-    return memUsageMB, nil
+	// Convert the memory usage from bytes to MB and return
+	memUsageMB := memUsageBytes / (1024 * 1024)
+	return memUsageMB, nil
 }
-
 
 func readCPUUsage(containerID string) (int64, error) {
 	cpuStatPath := filepath.Join(cgroupDir, fmt.Sprintf("docker-%s.scope/cpu.stat", containerID))
@@ -268,25 +306,81 @@ func readCPUUsage(containerID string) (int64, error) {
 }
 
 func scaleHandler(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
-        http.Error(w, "Unsupported method", http.StatusMethodNotAllowed)
-        return
-    }
+	if r.Method != http.MethodPost {
+		http.Error(w, "Unsupported method", http.StatusMethodNotAllowed)
+		return
+	}
 
-    var data struct {
-        ServiceID string `json:"serviceId"`
-        Direction string `json:"direction"`
-    }
-    if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-        http.Error(w, err.Error(), http.StatusBadRequest)
-        return
-    }
+	var data struct {
+		ServiceID string `json:"serviceId"`
+		Direction string `json:"direction"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-    if err := scale.ChangeServiceReplicas(data.ServiceID, data.Direction); err != nil {
-        http.Error(w, err.Error(), http.StatusInternalServerError)
-        return
-    }
+	if err := scale.ChangeServiceReplicas(data.ServiceID, data.Direction); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-    w.WriteHeader(http.StatusOK)
-    w.Write([]byte("Scaling successful."))
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Scaling successful."))
+}
+
+func loadConfig(path string) (*Config, error) {
+	file, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// set default values to avoid nil pointers
+	config := Config{
+		LowerCPU:         -1,
+		UpperCPU:         -1,
+		LowerMB:          -1,
+		UpperMB:          -1,
+		LowerGB:          -1,
+		UpperGB:          -1,
+		CollectionPeriod: "10s",
+		Iface:            "eth0",
+		Managers:         make(map[string]string),
+		Workers:          make(map[string]string),
+	}
+
+	if err := yaml.Unmarshal(file, &config); err != nil {
+		return nil, err
+	}
+
+	return &config, nil
+}
+
+func createswarmNodeInfo(config *Config) (*SwarmNodeInfo, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, err
+	}
+
+	swarmNodeInfo := SwarmNodeInfo{
+		AutoscalerManager: false,
+		OtherNodes:        make([]SwarmNode, 0),
+	}
+
+	// Check if this node is a manager
+	if _, ok := config.Managers[hostname]; ok {
+		swarmNodeInfo.AutoscalerManager = true
+	}
+
+	// Add all nodes to OtherNodes list
+	for name, ip := range config.Managers {
+		if name != hostname {
+			swarmNodeInfo.OtherNodes = append(swarmNodeInfo.OtherNodes, SwarmNode{name, ip})
+		}
+	}
+	for name, ip := range config.Workers {
+		swarmNodeInfo.OtherNodes = append(swarmNodeInfo.OtherNodes, SwarmNode{name, ip})
+	}
+
+	return &swarmNodeInfo, nil
 }

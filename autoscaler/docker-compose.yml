@@ -1,0 +1,9 @@
+services:
+  webserver:
+    image: httpd:latest
+    ports:
+      - "8080:80"
+    labels:
+      autoscaler.handlerNode: "lucario"
+    deploy:
+      replicas: 1
