@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -118,6 +120,14 @@ func main() {
 					monitoringCtxMap.Delete(containerID)
 				}
 			}
+		}
+	}()
+
+	go func() {
+		http.HandleFunc("/", scaleHandler)
+		fmt.Println("Starting HTTP server on port 4567")
+		if err := http.ListenAndServe(":4567", nil); err != nil {
+			fmt.Printf("HTTP server error: %v\n", err)
 		}
 	}()
 
@@ -255,4 +265,28 @@ func readCPUUsage(containerID string) (int64, error) {
 	}
 
 	return 0, fmt.Errorf("usage_usec not found in cpu.stat for container %s", containerID)
+}
+
+func scaleHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "Unsupported method", http.StatusMethodNotAllowed)
+        return
+    }
+
+    var data struct {
+        ServiceID string `json:"serviceId"`
+        Direction string `json:"direction"`
+    }
+    if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
+    }
+
+    if err := scale.ChangeServiceReplicas(data.ServiceID, data.Direction); err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("Scaling successful."))
 }
