@@ -40,6 +40,7 @@ type SwarmNodeInfo struct {
 type SwarmNode struct {
 	Hostname string
 	IP       string
+	Manager  bool
 }
 
 type Resource interface {
@@ -375,11 +376,11 @@ func createswarmNodeInfo(config *Config) (*SwarmNodeInfo, error) {
 	// Add all nodes to OtherNodes list
 	for name, ip := range config.Managers {
 		if name != hostname {
-			swarmNodeInfo.OtherNodes = append(swarmNodeInfo.OtherNodes, SwarmNode{name, ip})
+			swarmNodeInfo.OtherNodes = append(swarmNodeInfo.OtherNodes, SwarmNode{name, ip, true})
 		}
 	}
 	for name, ip := range config.Workers {
-		swarmNodeInfo.OtherNodes = append(swarmNodeInfo.OtherNodes, SwarmNode{name, ip})
+		swarmNodeInfo.OtherNodes = append(swarmNodeInfo.OtherNodes, SwarmNode{name, ip, false})
 	}
 
 	return &swarmNodeInfo, nil
