@@ -4,10 +4,10 @@ services:
     ports:
       - "8080:80"
     labels:
-      autoscaler.handlerNode: "lucario"
+      autoscaler.handlerNode: "swarm-vm1"
     deploy:
       labels:
-        autoscaler.handlerNode: "lucario"
+        autoscaler.handlerNode: "swarm-vm1"
       placement:
         constraints:
-          - node.hostname==lucario
+          - node.hostname==swarm-vm1

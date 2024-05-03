@@ -3,13 +3,13 @@
 lower-cpu: 0.1
 upper-cpu: 50
 
-collection-period: 3s
+collection-period: 5s
 
-iface: wlp60s0
+iface: eth0
 
 managers:
-  lucario: 127.0.0.1
+  swarm-vm1: 192.168.2.4
 
 workers:
-  gengar: 192.168.2.4
-  chimchar: 192.168.2.5
+  swarm-vm2: 192.168.2.5
+  swarm-vm3: 192.168.2.6
