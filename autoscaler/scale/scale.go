@@ -3,6 +3,7 @@ package scale
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -238,9 +239,15 @@ func (s *ScaleManager) NewEventNotifier() *EventNotifier {
 func (en *EventNotifier) ListenForEvents(ctx context.Context) {
 	cli := instance.cli
 
+	hostname, err := os.Hostname()
+	if err != nil {
+		fmt.Println("Error getting hostname in ListenForEvents:", err)
+		os.Exit(1)
+	}
+
 	filters := filters.NewArgs(
 		filters.Arg("type", "container"),
-		filters.Arg("label", "com.docker.swarm.service.id"),
+		filters.Arg("label", "autoscaler.handlerNode="+hostname),
 		filters.Arg("event", "start"),
 		filters.Arg("event", "die"),
 	)
@@ -279,8 +286,14 @@ func (en *EventNotifier) ListenForEvents(ctx context.Context) {
 func (s ScaleManager) GetRunningContainers(ctx context.Context) ([]string, error) {
     cli := instance.cli
 
+	hostname, err := os.Hostname()
+	if err != nil {
+		fmt.Println("Error getting hostname in GetRunningContainers:", err)
+		os.Exit(1)
+	}
+
 	filters := filters.NewArgs()
-	filters.Add("label", "com.docker.swarm.service.id")
+	filters.Add("label", "autoscaler.handlerNode="+hostname)
 
 	listOptions := container.ListOptions{
 		Filters: filters,
@@ -294,26 +307,8 @@ func (s ScaleManager) GetRunningContainers(ctx context.Context) ([]string, error
     var containerIDs []string
     for _, container := range containers {
 
-		serviceID := container.Labels["com.docker.swarm.service.id"]
-		if serviceID != "" {
-			service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
-			if err != nil {
-				fmt.Printf("Error inspecting service %s: %v\n", serviceID, err)
-			}
-
-			if service.Spec.Mode.Replicated != nil && service.Spec.Mode.Replicated.Replicas != nil {
-
-				currentReplicas := *service.Spec.Mode.Replicated.Replicas
-				if currentReplicas == 1 {
-					// Add a constraint to run on a manager node
-					if err := updateServiceConstraints(service, true); err != nil {
-						fmt.Printf("Error adding constraint to service: %v\n", err)
-					}
-				}
-			}
-		}
-
-        containerIDs = append(containerIDs, container.ID)
+		containerIDs = append(containerIDs, container.ID)
+		
     }
 
 	fmt.Printf("Found %d running containers\n", len(containerIDs))

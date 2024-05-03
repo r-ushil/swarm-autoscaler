@@ -6,4 +6,6 @@ services:
     labels:
       autoscaler.handlerNode: "lucario"
     deploy:
-      replicas: 1
+      placement:
+        constraints:
+          - node.hostname==lucario
