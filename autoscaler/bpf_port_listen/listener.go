@@ -150,7 +150,7 @@ func (s *BPFListener) listenForEvents() {
                     }
 
                     // Send scale request to manager node from worker node
-                    if err := server.SendScaleRequest(serviceID.(string), "up", manager.IP); err != nil {
+                    if err := server.SendScaleRequest(serviceID.(string), "over", manager.IP); err != nil {
                         log.Printf("Failed to send scale request to manager node: %v", err)
                     }
                 }
