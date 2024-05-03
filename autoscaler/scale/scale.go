@@ -89,14 +89,19 @@ func updateServiceConstraints(service swarm.Service, add bool) error {
 	ctx := context.Background()
 	cli := instance.cli
 
+	hostName, exists := service.Spec.Labels["autoscaler.handlerNode"]
+	if !exists {
+		return fmt.Errorf("handlerNode label not found on service %s in updateServiceConstraints", service.ID)
+	}
+
 	// Update the service with the new constraints
 	serviceSpec := service.Spec
 	if add {
-		fmt.Printf("Adding constraint to service %s to run on manager node\n", service.ID)
-		serviceSpec.TaskTemplate.Placement.Constraints = []string{"node.role==manager"}
+		fmt.Printf("Adding constraint to service %s to run on hostname %s\n", service.ID, hostName)
+		serviceSpec.TaskTemplate.Placement.Constraints = []string{"node.hostname=="+hostName}
 	} else {
 		if serviceSpec.TaskTemplate.Placement.Constraints != nil {
-			fmt.Printf("Removing constraint from service %s to run on manager node\n", service.ID)
+			fmt.Printf("Removing constraint from service %s to run on hostname %s\n", service.ID, hostName)
 			serviceSpec.TaskTemplate.Placement.Constraints = nil
 		}
 	}
@@ -123,7 +128,7 @@ func ChangeServiceReplicas(serviceID string, direction string) error {
 		currentReplicas := *service.Spec.Mode.Replicated.Replicas
 		if direction == "over" {
 			if currentReplicas == 1 {
-				// Add a constraint to run on a manager node
+				// Remove the constraint to run on the specified hostname
 				if err := updateServiceConstraints(service, false); err != nil {
 					return fmt.Errorf("error adding constraint to service: %w", err)
 				}
@@ -134,7 +139,7 @@ func ChangeServiceReplicas(serviceID string, direction string) error {
 			if currentReplicas > 1 {
 				newReplicas = currentReplicas - 1
 				if newReplicas == 1 {
-					// Add a constraint to run on a manager node
+					// Add a constraint to run on the specified hostname
 					if err := updateServiceConstraints(service, true); err != nil {
 						return fmt.Errorf("error adding constraint to service: %w", err)
 					}
@@ -308,7 +313,7 @@ func (s ScaleManager) GetRunningContainers(ctx context.Context) ([]string, error
     for _, container := range containers {
 
 		containerIDs = append(containerIDs, container.ID)
-		
+
     }
 
 	fmt.Printf("Found %d running containers\n", len(containerIDs))
