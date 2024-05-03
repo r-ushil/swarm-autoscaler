@@ -141,6 +141,18 @@ func (s *BPFListener) listenForEvents() {
                     fmt.Printf("Scaling service %s back up\n", serviceID)
                     // Call scaler to scale back up to 1.
                     s.Scaler.ScaleTo(serviceID.(string), 1)
+                } else {
+                    fmt.Printf("Scaling service %s back up on manager node\n", serviceID)
+
+                    manager, err := server.GetManagerNode(s.SwarmNodeInfo.OtherNodes)
+                    if err != nil {
+                        log.Printf("Failed to get manager node to scale back to 1 from worker: %v", err)
+                    }
+
+                    // Send scale request to manager node from worker node
+                    if err := server.SendScaleRequest(serviceID.(string), "up", manager.IP); err != nil {
+                        log.Printf("Failed to send scale request to manager node: %v", err)
+                    }
                 }
 
             } else {
