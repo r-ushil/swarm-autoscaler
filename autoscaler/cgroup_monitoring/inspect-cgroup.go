@@ -44,7 +44,7 @@ type SwarmNode struct {
 }
 
 type Resource interface {
-	Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration)
+	Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration, swarmNodeInfo *SwarmNodeInfo)
 }
 
 type CPUResource struct {
@@ -138,7 +138,7 @@ func main() {
 	
 	for _, containerID := range runningContainers {
 		fmt.Printf("Monitoring container: %s\n", containerID)
-		startMonitoring(ctx, containerID, resource, collectionPeriod)
+		startMonitoring(ctx, containerID, resource, collectionPeriod, swarmNodeInfo)
 	}
 
 	// Handle container start and stop events
@@ -148,7 +148,7 @@ func main() {
 			case containerID := <-eventNotifier.StartChan:
 				// Start monitoring for the new container
 				fmt.Printf("Monitoring container: %s\n", containerID)
-				startMonitoring(ctx, containerID, resource, collectionPeriod)
+				startMonitoring(ctx, containerID, resource, collectionPeriod, swarmNodeInfo)
 			case containerID := <-eventNotifier.StopChan:
 				// Stop monitoring for the stopped container
 				fmt.Printf("Stopping monitoring for container: %s\n", containerID)
@@ -160,31 +160,42 @@ func main() {
 		}
 	}()
 
-	go func() {
-		http.HandleFunc("/", scaleHandler)
-		fmt.Println("Starting HTTP server on port 4567")
-		if err := http.ListenAndServe(":4567", nil); err != nil {
-			fmt.Printf("HTTP server error: %v\n", err)
-		}
-	}()
-
-	fmt.Println("Swarm node info:", swarmNodeInfo)
+	// Start HTTP server for scaling requests if manager node
+	if swarmNodeInfo.AutoscalerManager {
+		go func() {
+			http.HandleFunc("/", scaleHandler)
+			fmt.Println("Starting HTTP server on port 4567")
+			if err := http.ListenAndServe(":4567", nil); err != nil {
+				fmt.Printf("HTTP server error: %v\n", err)
+			}
+		}()
+	}
 
 	// Wait for a signal to terminate
 	<-ctx.Done()
 
 }
 
-func startMonitoring(parentCtx context.Context, containerID string, resource Resource, collectionPeriod time.Duration) {
+func getManagerNode(otherNodes []SwarmNode) (SwarmNode, error) {
+	for _, node := range otherNodes {
+		if node.Manager {
+			return node, nil
+		}
+	}
+
+	return SwarmNode{}, fmt.Errorf("no manager node found")
+}
+
+func startMonitoring(parentCtx context.Context, containerID string, resource Resource, collectionPeriod time.Duration, swarmNodeInfo *SwarmNodeInfo) {
 	if _, exists := monitoringCtxMap.Load(containerID); !exists {
 		monitorCtx, monitorCancel := context.WithCancel(parentCtx)
 		monitoringCtxMap.Store(containerID, monitorCancel)
 
-		go resource.Monitor(monitorCtx, containerID, collectionPeriod)
+		go resource.Monitor(monitorCtx, containerID, collectionPeriod, swarmNodeInfo)
 	}
 }
 
-func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration) {
+func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration, swarmNodeInfo *SwarmNodeInfo) {
 	lastUsageUsec, err := readCPUUsage(containerID) // Initial read before loop
 	if err != nil {
 		fmt.Printf("Initial CPU usage read error for container %s: %v\n", containerID, err)
@@ -212,8 +223,19 @@ func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collect
 			direction := determineScalingDirection(cpuUtilization, cpu.LowerUtil, cpu.UpperUtil)
 			if direction != "" {
 				fmt.Printf("ContainerID: %s, CPU Utilization: %.2f%%, Direction: %s\n", containerID, cpuUtilization, direction)
-				if err := scale.ScaleService(containerID, direction); err != nil {
-					fmt.Printf("Error scaling service for container %s: %v\n", containerID, err)
+				if swarmNodeInfo.AutoscalerManager {
+					if err := scale.ScaleService(containerID, direction); err != nil {
+						fmt.Printf("Error scaling service for container %s: %v\n", containerID, err)
+					}
+				} else {
+					managerNode, err := getManagerNode(swarmNodeInfo.OtherNodes)
+					if err != nil {
+						fmt.Printf("Error getting manager node: %v\n", err)
+						return
+					}
+					if err := scale.SendScaleRequest(containerID, direction, managerNode.IP); err != nil {
+						fmt.Printf("Error sending scale request to manager node: %v\n", err)
+					}
 				}
 			}
 
@@ -222,7 +244,7 @@ func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collect
 	}
 }
 
-func (mem *MemoryResource) Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration) {
+func (mem *MemoryResource) Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration, swarmNodeInfo *SwarmNodeInfo) {
 	ticker := time.NewTicker(collectionPeriod)
 	defer ticker.Stop()
 
@@ -246,8 +268,19 @@ func (mem *MemoryResource) Monitor(ctx context.Context, containerID string, coll
 			if direction != "" {
 				fmt.Printf("ContainerID: %s, Direction: %s, Memory Used: %d MB\n", containerID, direction, memUsage)
 				// Assuming ScaleService handles its own context and error handling
-				if err := scale.ScaleService(containerID, direction); err != nil {
-					fmt.Printf("Error scaling service for container %s: %v\n", containerID, err)
+				if swarmNodeInfo.AutoscalerManager {
+					if err := scale.ScaleService(containerID, direction); err != nil {
+						fmt.Printf("Error scaling service for container %s: %v\n", containerID, err)
+					}
+				} else {
+					managerNode, err := getManagerNode(swarmNodeInfo.OtherNodes)
+					if err != nil {
+						fmt.Printf("Error getting manager node: %v\n", err)
+						return
+					}
+					if err := scale.SendScaleRequest(containerID, direction, managerNode.IP); err != nil {
+						fmt.Printf("Error sending scale request to manager node: %v\n", err)
+					}
 				}
 			}
 		}
