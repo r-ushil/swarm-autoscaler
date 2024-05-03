@@ -115,6 +115,9 @@ func main() {
 	scaler.SetPortListener(portListener)
 	portListener.SetScaler(scaler)
 
+	portListener.SetNodeInfo(*swarmNodeInfo)
+	scaler.SetNodeInfo(*swarmNodeInfo)
+	
 	eventNotifier := scaler.NewEventNotifier()
 	go eventNotifier.ListenForEvents(ctx)
 
@@ -156,6 +159,11 @@ func main() {
 		}()
 	}
 
+	// Start server for port listener requests
+	go func() {
+		server.PortServer(portListener.ListenOnPort, portListener.RemovePort)
+	}()
+	
 	// Wait for a signal to terminate
 	<-ctx.Done()
 
@@ -213,7 +221,7 @@ func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collect
 					serviceId, err := scale.FindServiceIDFromContainer(containerID)
 
 					if err != nil {
-						fmt.Printf("error finding service ID from container: %w", err)
+						fmt.Printf("error finding service ID from container: %v", err)
 						return
 					}
 
@@ -265,7 +273,7 @@ func (mem *MemoryResource) Monitor(ctx context.Context, containerID string, coll
 					serviceId, err := scale.FindServiceIDFromContainer(containerID)
 
 					if err != nil {
-						fmt.Printf("error finding service ID from container: %w", err)
+						fmt.Printf("error finding service ID from container: %v", err)
 						return
 					}
 

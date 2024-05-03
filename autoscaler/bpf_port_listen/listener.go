@@ -7,6 +7,7 @@ import (
     "fmt"
     "log"
     "os"
+    "server"
     "sync"
     "github.com/cilium/ebpf"
     "github.com/cilium/ebpf/link"
@@ -32,7 +33,8 @@ type BPFListener struct {
     EventsMap     *ebpf.Map
     Link          link.Link
     closing       chan struct{}
-    Scaler Scaler
+    Scaler        Scaler
+    SwarmNodeInfo server.SwarmNodeInfo
 }
 
 func GetBPFListener(ifaceName string) (*BPFListener, error) {
@@ -45,6 +47,10 @@ func GetBPFListener(ifaceName string) (*BPFListener, error) {
 
 func (s *BPFListener) SetScaler(scale Scaler) {
     s.Scaler = scale
+}
+
+func (s *BPFListener) SetNodeInfo(nodeInfo server.SwarmNodeInfo) {
+    s.SwarmNodeInfo = nodeInfo
 }
 
 func initBPFPortListener(ifaceName string) (*BPFListener, error) {
@@ -127,6 +133,16 @@ func (s *BPFListener) listenForEvents() {
                     log.Printf("Failed to remove port %d: %v", port, err)
                 }
 
+                if err = server.SendRemoveRequestToAllNodes(s.SwarmNodeInfo, port); err != nil {
+                    log.Printf("Failed to send remove request to all nodes: %v", err)
+                }
+
+                if s.SwarmNodeInfo.AutoscalerManager {
+                    fmt.Printf("Scaling service %s back up\n", serviceID)
+                    // Call scaler to scale back up to 1.
+                    s.Scaler.ScaleTo(serviceID.(string), 1)
+                }
+
             } else {
                 log.Println("Received malformed perf event")
             }
@@ -153,7 +169,7 @@ func (s *BPFListener) RemovePort(port uint32) error {
     // Removing the port from the local Go map.
     serviceID, ok := portToServiceID.Load(port)
     if !ok {
-        return fmt.Errorf("service ID for port %d not found", port)
+        return fmt.Errorf("service ID %s for port %d not found", serviceID, port)
     }
     portToServiceID.Delete(port)
 
@@ -163,10 +179,6 @@ func (s *BPFListener) RemovePort(port uint32) error {
     }
 
     fmt.Printf("Removed port %d from BPF listener\n", port)
-    fmt.Printf("Scaling service %s back up\n", serviceID)
-
-    // Call scaler to scale back up to 1.
-    s.Scaler.ScaleTo(serviceID.(string), 1)
-
+    
     return nil
 }

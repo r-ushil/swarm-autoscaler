@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 	"time"
-
+	"server"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -22,6 +22,7 @@ type PortListener interface {
 type ScaleManager struct {
 	cli *client.Client
 	portListener PortListener
+	nodeInfo server.SwarmNodeInfo
 }
 
 var instance *ScaleManager
@@ -39,6 +40,10 @@ func (manager *ScaleManager) SetPortListener(listener PortListener) {
 	manager.portListener = listener
 }
 
+func (manager *ScaleManager) SetNodeInfo (nodeInfo server.SwarmNodeInfo) {
+	manager.nodeInfo = nodeInfo
+}
+
 func (manager *ScaleManager) initScaler() {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
@@ -46,6 +51,7 @@ func (manager *ScaleManager) initScaler() {
 	}
 	manager.cli = cli
 	manager.portListener = nil
+	manager.nodeInfo = server.SwarmNodeInfo{}
 }
 
 
@@ -115,7 +121,14 @@ func updateServiceConstraints(service swarm.Service, add bool) error {
 }
 
 // changeServiceReplicas changes the number of replicas for the given service ID based on direction.
+// only runs on manager node
 func ChangeServiceReplicas(serviceID string, direction string) error {
+	// should never be called on a non-manager node
+
+	if !instance.nodeInfo.AutoscalerManager {
+		return fmt.Errorf("changeServiceReplicas should only be called on manager node")
+	}
+
 	ctx := context.Background()
 	cli := instance.cli
 
@@ -154,9 +167,16 @@ func ChangeServiceReplicas(serviceID string, direction string) error {
 					return err
 				}
 
-				// add port to listener
 				if err := instance.portListener.ListenOnPort(port, serviceID); err != nil {
 					return fmt.Errorf("failed to listen on port: %w", err)
+				
+				}
+				
+				// add port to all listeners by making a request to the server
+				err = server.SendListenRequestToAllNodes(instance.nodeInfo, port, serviceID)
+				
+				if err != nil {
+					return fmt.Errorf("error sending listen request to all nodes: %w", err)
 				}
 
 				// scale to 0

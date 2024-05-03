@@ -30,3 +30,6 @@ require (
 	golang.org/x/time v0.5.0 // indirect
 	gotest.tools/v3 v3.5.1 // indirect
 )
+
+require server v0.0.0
+replace server => ../server
