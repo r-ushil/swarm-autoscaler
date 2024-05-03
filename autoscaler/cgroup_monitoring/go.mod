@@ -6,6 +6,10 @@ require scale v0.0.0
 
 require bpf_port_listen v0.0.0
 
+require server v0.0.0
+
+require gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
+
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/Microsoft/go-winio v0.4.14 // indirect
@@ -41,3 +45,5 @@ require (
 replace scale => ../scale
 
 replace bpf_port_listen => ../bpf_port_listen
+
+replace server => ../server

@@ -3,12 +3,11 @@ package main
 import (
 	"bpf_port_listen"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
+	"server"
 	"scale"
 	"strconv"
 	"strings"
@@ -31,20 +30,10 @@ type Config struct {
 	Workers          map[string]string `yaml:"workers"`
 }
 
-// SwarmNodeInfo represents the node-specific information
-type SwarmNodeInfo struct {
-	AutoscalerManager bool
-	OtherNodes        []SwarmNode
-}
 
-type SwarmNode struct {
-	Hostname string
-	IP       string
-	Manager  bool
-}
 
 type Resource interface {
-	Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration, swarmNodeInfo *SwarmNodeInfo)
+	Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration, swarmNodeInfo *server.SwarmNodeInfo)
 }
 
 type CPUResource struct {
@@ -116,20 +105,20 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	scale := scale.GetScaler()
+	scaler := scale.GetScaler()
 	portListener, err := bpf_port_listen.GetBPFListener(config.Iface)
 	if err != nil {
 		fmt.Printf("Failed to setup BPF listener: %v\n", err)
 		os.Exit(1)
 	}
 
-	scale.SetPortListener(portListener)
-	portListener.SetScaler(scale)
+	scaler.SetPortListener(portListener)
+	portListener.SetScaler(scaler)
 
-	eventNotifier := scale.NewEventNotifier()
+	eventNotifier := scaler.NewEventNotifier()
 	go eventNotifier.ListenForEvents(ctx)
 
-	runningContainers, err := scale.GetRunningContainers(ctx)
+	runningContainers, err := scaler.GetRunningContainers(ctx)
 	if err != nil {
 		fmt.Printf("Failed to get running containers: %v\n", err)
 		os.Exit(1)
@@ -163,11 +152,7 @@ func main() {
 	// Start HTTP server for scaling requests if manager node
 	if swarmNodeInfo.AutoscalerManager {
 		go func() {
-			http.HandleFunc("/", scaleHandler)
-			fmt.Println("Starting HTTP server on port 4567")
-			if err := http.ListenAndServe(":4567", nil); err != nil {
-				fmt.Printf("HTTP server error: %v\n", err)
-			}
+			server.ScaleServer(scale.ChangeServiceReplicas)
 		}()
 	}
 
@@ -176,17 +161,9 @@ func main() {
 
 }
 
-func getManagerNode(otherNodes []SwarmNode) (SwarmNode, error) {
-	for _, node := range otherNodes {
-		if node.Manager {
-			return node, nil
-		}
-	}
 
-	return SwarmNode{}, fmt.Errorf("no manager node found")
-}
 
-func startMonitoring(parentCtx context.Context, containerID string, resource Resource, collectionPeriod time.Duration, swarmNodeInfo *SwarmNodeInfo) {
+func startMonitoring(parentCtx context.Context, containerID string, resource Resource, collectionPeriod time.Duration, swarmNodeInfo *server.SwarmNodeInfo) {
 	if _, exists := monitoringCtxMap.Load(containerID); !exists {
 		monitorCtx, monitorCancel := context.WithCancel(parentCtx)
 		monitoringCtxMap.Store(containerID, monitorCancel)
@@ -195,7 +172,7 @@ func startMonitoring(parentCtx context.Context, containerID string, resource Res
 	}
 }
 
-func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration, swarmNodeInfo *SwarmNodeInfo) {
+func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration, swarmNodeInfo *server.SwarmNodeInfo) {
 	lastUsageUsec, err := readCPUUsage(containerID) // Initial read before loop
 	if err != nil {
 		fmt.Printf("Initial CPU usage read error for container %s: %v\n", containerID, err)
@@ -228,12 +205,19 @@ func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collect
 						fmt.Printf("Error scaling service for container %s: %v\n", containerID, err)
 					}
 				} else {
-					managerNode, err := getManagerNode(swarmNodeInfo.OtherNodes)
+					managerNode, err := server.GetManagerNode(swarmNodeInfo.OtherNodes)
 					if err != nil {
 						fmt.Printf("Error getting manager node: %v\n", err)
 						return
 					}
-					if err := scale.SendScaleRequest(containerID, direction, managerNode.IP); err != nil {
+					serviceId, err := scale.FindServiceIDFromContainer(containerID)
+
+					if err != nil {
+						fmt.Printf("error finding service ID from container: %w", err)
+						return
+					}
+
+					if err := server.SendScaleRequest(serviceId, direction, managerNode.IP); err != nil {
 						fmt.Printf("Error sending scale request to manager node: %v\n", err)
 					}
 				}
@@ -244,7 +228,7 @@ func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collect
 	}
 }
 
-func (mem *MemoryResource) Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration, swarmNodeInfo *SwarmNodeInfo) {
+func (mem *MemoryResource) Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration, swarmNodeInfo *server.SwarmNodeInfo) {
 	ticker := time.NewTicker(collectionPeriod)
 	defer ticker.Stop()
 
@@ -273,12 +257,19 @@ func (mem *MemoryResource) Monitor(ctx context.Context, containerID string, coll
 						fmt.Printf("Error scaling service for container %s: %v\n", containerID, err)
 					}
 				} else {
-					managerNode, err := getManagerNode(swarmNodeInfo.OtherNodes)
+					managerNode, err := server.GetManagerNode(swarmNodeInfo.OtherNodes)
 					if err != nil {
 						fmt.Printf("Error getting manager node: %v\n", err)
 						return
 					}
-					if err := scale.SendScaleRequest(containerID, direction, managerNode.IP); err != nil {
+					serviceId, err := scale.FindServiceIDFromContainer(containerID)
+
+					if err != nil {
+						fmt.Printf("error finding service ID from container: %w", err)
+						return
+					}
+
+					if err := server.SendScaleRequest(serviceId, direction, managerNode.IP); err != nil {
 						fmt.Printf("Error sending scale request to manager node: %v\n", err)
 					}
 				}
@@ -339,29 +330,7 @@ func readCPUUsage(containerID string) (int64, error) {
 	return 0, fmt.Errorf("usage_usec not found in cpu.stat for container %s", containerID)
 }
 
-func scaleHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Unsupported method", http.StatusMethodNotAllowed)
-		return
-	}
 
-	var data struct {
-		ServiceID string `json:"serviceId"`
-		Direction string `json:"direction"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if err := scale.ChangeServiceReplicas(data.ServiceID, data.Direction); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Scaling successful."))
-}
 
 func loadConfig(path string) (*Config, error) {
 	file, err := os.ReadFile(path)
@@ -390,15 +359,15 @@ func loadConfig(path string) (*Config, error) {
 	return &config, nil
 }
 
-func createswarmNodeInfo(config *Config) (*SwarmNodeInfo, error) {
+func createswarmNodeInfo(config *Config) (*server.SwarmNodeInfo, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, err
 	}
 
-	swarmNodeInfo := SwarmNodeInfo{
+	swarmNodeInfo := server.SwarmNodeInfo{
 		AutoscalerManager: false,
-		OtherNodes:        make([]SwarmNode, 0),
+		OtherNodes:        make([]server.SwarmNode, 0),
 	}
 
 	// Check if this node is a manager
@@ -409,11 +378,11 @@ func createswarmNodeInfo(config *Config) (*SwarmNodeInfo, error) {
 	// Add all nodes to OtherNodes list
 	for name, ip := range config.Managers {
 		if name != hostname {
-			swarmNodeInfo.OtherNodes = append(swarmNodeInfo.OtherNodes, SwarmNode{name, ip, true})
+			swarmNodeInfo.OtherNodes = append(swarmNodeInfo.OtherNodes, server.SwarmNode{Hostname: name, IP: ip, Manager: true})
 		}
 	}
 	for name, ip := range config.Workers {
-		swarmNodeInfo.OtherNodes = append(swarmNodeInfo.OtherNodes, SwarmNode{name, ip, false})
+		swarmNodeInfo.OtherNodes = append(swarmNodeInfo.OtherNodes, server.SwarmNode{Hostname: name, IP: ip, Manager: false})
 	}
 
 	return &swarmNodeInfo, nil

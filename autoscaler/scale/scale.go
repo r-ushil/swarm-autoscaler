@@ -1,11 +1,8 @@
 package scale
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -55,7 +52,7 @@ func (manager *ScaleManager) initScaler() {
 // ScaleService adjusts the service replicas based on the direction for the given container ID.
 func ScaleService(containerID string, direction string) error {
 
-	serviceID, err := findServiceIDFromContainer(containerID)
+	serviceID, err := FindServiceIDFromContainer(containerID)
 	if err != nil {
 		return fmt.Errorf("error finding service ID from container: %w", err)
 	}
@@ -69,8 +66,8 @@ func ScaleService(containerID string, direction string) error {
 	return nil
 }
 
-// findServiceIDFromContainer inspects the container to find its associated service ID.
-func findServiceIDFromContainer(containerID string) (string, error) {
+// FindServiceIDFromContainer inspects the container to find its associated service ID.
+func FindServiceIDFromContainer(containerID string) (string, error) {
 	ctx := context.Background()
 	cli := instance.cli
 	container, err := cli.ContainerInspect(ctx, containerID)
@@ -88,32 +85,7 @@ func findServiceIDFromContainer(containerID string) (string, error) {
 }
 
 
-// send scale request to manager node from worker node
-func SendScaleRequest(containerID string, direction string, managerIP string) error {
-	serviceId, err := findServiceIDFromContainer(containerID)
 
-	if err != nil {
-		return fmt.Errorf("error finding service ID from container: %w", err)
-	}
-
-	data := map[string]string{"serviceId": serviceId, "direction": direction}
-	jsonData, err := json.Marshal(data)
-
-	if err != nil {
-		return fmt.Errorf("error marshalling JSON data: %w", err)
-	}
-
-	resp, err := http.Post("http://"+managerIP+":4567/scale", "application/json", bytes.NewBuffer(jsonData))
-
-	if err != nil {
-		return fmt.Errorf("error sending scale request to manager node: %w", err)
-	}
-
-	defer resp.Body.Close()
-
-	return nil
-
-}
 
 
 func updateServiceConstraints(service swarm.Service, add bool) error {
