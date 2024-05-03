@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"server"
 	"scale"
+	"server"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,8 +29,6 @@ type Config struct {
 	Managers         map[string]string `yaml:"managers"`
 	Workers          map[string]string `yaml:"workers"`
 }
-
-
 
 type Resource interface {
 	Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration, swarmNodeInfo *server.SwarmNodeInfo)
@@ -117,7 +115,7 @@ func main() {
 
 	portListener.SetNodeInfo(*swarmNodeInfo)
 	scaler.SetNodeInfo(*swarmNodeInfo)
-	
+
 	eventNotifier := scaler.NewEventNotifier()
 	go eventNotifier.ListenForEvents(ctx)
 
@@ -127,7 +125,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	
 	for _, containerID := range runningContainers {
 		fmt.Printf("Monitoring container: %s\n", containerID)
 		startMonitoring(ctx, containerID, resource, collectionPeriod, swarmNodeInfo)
@@ -163,13 +160,11 @@ func main() {
 	go func() {
 		server.PortServer(portListener.ListenOnPort, portListener.RemovePort)
 	}()
-	
+
 	// Wait for a signal to terminate
 	<-ctx.Done()
 
 }
-
-
 
 func startMonitoring(parentCtx context.Context, containerID string, resource Resource, collectionPeriod time.Duration, swarmNodeInfo *server.SwarmNodeInfo) {
 	if _, exists := monitoringCtxMap.Load(containerID); !exists {
@@ -337,8 +332,6 @@ func readCPUUsage(containerID string) (int64, error) {
 
 	return 0, fmt.Errorf("usage_usec not found in cpu.stat for container %s", containerID)
 }
-
-
 
 func loadConfig(path string) (*Config, error) {
 	file, err := os.ReadFile(path)

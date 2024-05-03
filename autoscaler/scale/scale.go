@@ -3,26 +3,25 @@ package scale
 import (
 	"context"
 	"fmt"
-	"os"
-	"sync"
-	"time"
-	"server"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
+	"os"
+	"server"
+	"sync"
+	"time"
 )
-
 
 type PortListener interface {
 	ListenOnPort(port uint32, serviceID string) error
 }
 
 type ScaleManager struct {
-	cli *client.Client
+	cli          *client.Client
 	portListener PortListener
-	nodeInfo server.SwarmNodeInfo
+	nodeInfo     server.SwarmNodeInfo
 }
 
 var instance *ScaleManager
@@ -40,7 +39,7 @@ func (manager *ScaleManager) SetPortListener(listener PortListener) {
 	manager.portListener = listener
 }
 
-func (manager *ScaleManager) SetNodeInfo (nodeInfo server.SwarmNodeInfo) {
+func (manager *ScaleManager) SetNodeInfo(nodeInfo server.SwarmNodeInfo) {
 	manager.nodeInfo = nodeInfo
 }
 
@@ -53,7 +52,6 @@ func (manager *ScaleManager) initScaler() {
 	manager.portListener = nil
 	manager.nodeInfo = server.SwarmNodeInfo{}
 }
-
 
 // ScaleService adjusts the service replicas based on the direction for the given container ID.
 func ScaleService(containerID string, direction string) error {
@@ -90,10 +88,6 @@ func FindServiceIDFromContainer(containerID string) (string, error) {
 	return serviceID, nil
 }
 
-
-
-
-
 func updateServiceConstraints(service swarm.Service, add bool) error {
 	ctx := context.Background()
 	cli := instance.cli
@@ -107,7 +101,7 @@ func updateServiceConstraints(service swarm.Service, add bool) error {
 	serviceSpec := service.Spec
 	if add {
 		fmt.Printf("Adding constraint to service %s to run on hostname %s\n", service.ID, hostName)
-		serviceSpec.TaskTemplate.Placement.Constraints = []string{"node.hostname=="+hostName}
+		serviceSpec.TaskTemplate.Placement.Constraints = []string{"node.hostname==" + hostName}
 	} else {
 		if serviceSpec.TaskTemplate.Placement.Constraints != nil {
 			fmt.Printf("Removing constraint from service %s to run on hostname %s\n", service.ID, hostName)
@@ -169,19 +163,18 @@ func ChangeServiceReplicas(serviceID string, direction string) error {
 
 				if err := instance.portListener.ListenOnPort(port, serviceID); err != nil {
 					return fmt.Errorf("failed to listen on port: %w", err)
-				
 				}
-				
+
 				// add port to all listeners by making a request to the server
 				err = server.SendListenRequestToAllNodes(instance.nodeInfo, port, serviceID)
-				
+
 				if err != nil {
 					return fmt.Errorf("error sending listen request to all nodes: %w", err)
 				}
 
 				// scale to 0
 				scaleTo(serviceID, 0)
-				
+
 				return nil
 			}
 		} else {
@@ -200,31 +193,29 @@ func (s *ScaleManager) ScaleTo(serviceID string, replicas uint64) error {
 	return scaleTo(serviceID, replicas)
 }
 
-
 // scale service to number of replicas
 func scaleTo(serviceID string, replicas uint64) error {
 	ctx := context.Background()
 	cli := instance.cli
 
-    service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
-    if err != nil {
-        return err
-    }
+	service, _, err := cli.ServiceInspectWithRaw(ctx, serviceID, types.ServiceInspectOptions{})
+	if err != nil {
+		return err
+	}
 
-    // Set the replicas to the desired number
-    service.Spec.Mode.Replicated.Replicas = &replicas
+	// Set the replicas to the desired number
+	service.Spec.Mode.Replicated.Replicas = &replicas
 
-    updateOpts := types.ServiceUpdateOptions{}
-    _, err = cli.ServiceUpdate(ctx, serviceID, service.Version, service.Spec, updateOpts)
-    if err != nil {
-        return err
-    }
+	updateOpts := types.ServiceUpdateOptions{}
+	_, err = cli.ServiceUpdate(ctx, serviceID, service.Version, service.Spec, updateOpts)
+	if err != nil {
+		return err
+	}
 
-    fmt.Printf("Service %s scaled to %d replicas\n", serviceID, replicas)
+	fmt.Printf("Service %s scaled to %d replicas\n", serviceID, replicas)
 
 	return nil
 }
-
 
 func getPublishedPort(serviceID string) (uint32, error) {
 	ctx := context.Background()
@@ -234,7 +225,6 @@ func getPublishedPort(serviceID string) (uint32, error) {
 	if err != nil {
 		return 0, err
 	}
-
 
 	var publishedPort uint32
 	if len(service.Endpoint.Ports) > 0 {
@@ -246,8 +236,6 @@ func getPublishedPort(serviceID string) (uint32, error) {
 
 	return publishedPort, nil
 }
-
-
 
 // EventNotifier notifies about container start and stop events.
 type EventNotifier struct {
@@ -312,7 +300,7 @@ func (en *EventNotifier) ListenForEvents(ctx context.Context) {
 
 // GetRunningContainers returns a slice of container IDs for all currently running containers.
 func (s ScaleManager) GetRunningContainers(ctx context.Context) ([]string, error) {
-    cli := instance.cli
+	cli := instance.cli
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -327,19 +315,19 @@ func (s ScaleManager) GetRunningContainers(ctx context.Context) ([]string, error
 		Filters: filters,
 	}
 
-    containers, err := cli.ContainerList(ctx, listOptions)
-    if err != nil {
-        return nil, fmt.Errorf("error listing Docker containers: %w", err)
-    }
+	containers, err := cli.ContainerList(ctx, listOptions)
+	if err != nil {
+		return nil, fmt.Errorf("error listing Docker containers: %w", err)
+	}
 
-    var containerIDs []string
-    for _, container := range containers {
+	var containerIDs []string
+	for _, container := range containers {
 
 		containerIDs = append(containerIDs, container.ID)
 
-    }
+	}
 
 	fmt.Printf("Found %d running containers\n", len(containerIDs))
 
-    return containerIDs, nil
+	return containerIDs, nil
 }

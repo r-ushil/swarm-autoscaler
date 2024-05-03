@@ -66,7 +66,7 @@ func createScalerHandler(scaleFunc func(serviceID string, direction string) erro
 
 // send scale request to manager node from worker node
 func SendScaleRequest(serviceId string, direction string, managerIP string) error {
-	
+
 	data := map[string]string{"serviceId": serviceId, "direction": direction}
 	jsonData, err := json.Marshal(data)
 
@@ -154,7 +154,7 @@ func RemovePortHandler(removePortFunc func(port uint32) error) http.HandlerFunc 
 }
 
 func SendListenRequest(port uint32, serviceID string, ip string) error {
-	
+
 	data := map[string]interface{}{"port": port, "serviceId": serviceID}
 	jsonData, err := json.Marshal(data)
 
