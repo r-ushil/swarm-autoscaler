@@ -1,0 +1,12 @@
+
+services:
+  swarm-autoscaler: 
+    image: rushpate/swarm-autoscaler:latest
+    hostname: ${HOSTNAME}
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./config.yaml:/autoscaler/config.yaml:ro
+    cap_add:
+      - SYS_ADMIN
+    network_mode: host

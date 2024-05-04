@@ -1,0 +1,15 @@
+# autoscaler config
+
+lower-cpu: 0.1
+upper-cpu: 50
+
+collection-period: 5s
+
+iface: eth0
+
+managers:
+  swarm-vm1: 192.168.2.4
+
+workers:
+  swarm-vm2: 192.168.2.5
+  swarm-vm3: 192.168.2.6

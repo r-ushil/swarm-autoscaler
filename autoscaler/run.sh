@@ -1,5 +1,5 @@
 #!/bin/sh
-docker stack deploy -c docker-compose.yml webserver
+docker stack deploy -c httpd-stack.yml webserver
 cd cgroup_monitoring # go mod replace uses relative paths annoyingly
-sudo go run inspect-cgroup.go -config "../config.yaml"
+sudo go run inspect-cgroup.go -config "../build/config.yaml"
 
