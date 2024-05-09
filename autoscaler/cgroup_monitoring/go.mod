@@ -52,6 +52,6 @@ replace bpf_port_listen => ../bpf_port_listen
 
 replace server => ../server
 
-require logging v0.0.0 // indirect
+require logging v0.0.0
 
 replace logging => ../logging
