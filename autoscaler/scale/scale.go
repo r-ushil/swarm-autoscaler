@@ -8,6 +8,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
+	"logging"
 	"os"
 	"server"
 	"sync"
@@ -46,7 +47,7 @@ func (manager *ScaleManager) SetNodeInfo(nodeInfo server.SwarmNodeInfo) {
 func (manager *ScaleManager) initScaler() {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		panic("Failed to create Docker client: " + err.Error()) // handle the error appropriately for your application
+		panic("Failed to create Docker client: " + err.Error())
 	}
 	manager.cli = cli
 	manager.portListener = nil
@@ -66,7 +67,6 @@ func ScaleService(containerID string, direction string) error {
 		return fmt.Errorf("error changing service replicas: %w", err)
 	}
 
-	fmt.Println("Service replica count changed successfully.")
 	return nil
 }
 
@@ -100,11 +100,11 @@ func updateServiceConstraints(service swarm.Service, add bool) error {
 	// Update the service with the new constraints
 	serviceSpec := service.Spec
 	if add {
-		fmt.Printf("Adding constraint to service %s to run on hostname %s\n", service.ID, hostName)
+		logging.AddEventLog(fmt.Sprintf("Adding constraint to service %s to run on hostname %s", service.ID, hostName))
 		serviceSpec.TaskTemplate.Placement.Constraints = []string{"node.hostname==" + hostName}
 	} else {
 		if serviceSpec.TaskTemplate.Placement.Constraints != nil {
-			fmt.Printf("Removing constraint from service %s to run on hostname %s\n", service.ID, hostName)
+			logging.AddEventLog(fmt.Sprintf("Removing constraint from service %s to run on hostname %s", service.ID, hostName))
 			serviceSpec.TaskTemplate.Placement.Constraints = nil
 		}
 	}
@@ -212,7 +212,9 @@ func scaleTo(serviceID string, replicas uint64) error {
 		return err
 	}
 
-	fmt.Printf("Service %s scaled to %d replicas\n", serviceID, replicas)
+	logging.AddServiceLog(serviceID, uint32(replicas))
+
+	logging.AddEventLog(fmt.Sprintf("Scaled service %s to %d replicas", serviceID, replicas))
 
 	return nil
 }
@@ -280,19 +282,21 @@ func (en *EventNotifier) ListenForEvents(ctx context.Context) {
 		case event := <-eventsCh:
 			switch event.Action {
 			case "start":
-				fmt.Printf("Container started: %s\n", event.ID)
+				logging.AddContainerLog(event.ID, 0.0)
+				logging.AddEventLog(fmt.Sprintf("Container started: %s", event.ID))
 				en.StartChan <- event.ID
 			case "die":
-				fmt.Printf("Container stopped: %s\n", event.ID)
+				logging.AddEventLog(fmt.Sprintf("Container stopped: %s", event.ID))
+				logging.RemoveContainerLog(event.ID)
 				en.StopChan <- event.ID
 			}
 		case err := <-errsCh:
 			if err != nil {
-				fmt.Println("Error receiving Docker events:", err)
+				logging.AddEventLog(fmt.Sprintf("Error receiving Docker events: %v", err))
 				return
 			}
 		case <-ctx.Done():
-			fmt.Println("Stopped listening for Docker events.")
+			logging.AddEventLog("Stopped listening for Docker events.")
 			return
 		}
 	}
@@ -304,7 +308,7 @@ func (s ScaleManager) GetRunningContainers(ctx context.Context) ([]string, error
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		fmt.Println("Error getting hostname in GetRunningContainers:", err)
+		logging.AddEventLog(fmt.Sprintf("Error getting hostname in GetRunningContainers: %v", err))
 		os.Exit(1)
 	}
 
@@ -327,7 +331,7 @@ func (s ScaleManager) GetRunningContainers(ctx context.Context) ([]string, error
 
 	}
 
-	fmt.Printf("Found %d running containers\n", len(containerIDs))
+	logging.AddEventLog(fmt.Sprintf("Found %d running containers", len(containerIDs)))
 
 	return containerIDs, nil
 }

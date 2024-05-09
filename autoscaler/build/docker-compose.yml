@@ -7,6 +7,7 @@ services:
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /var/run/docker.sock:/var/run/docker.sock
       - ./config.yaml:/autoscaler/config.yaml:ro
+      - ./logging:/autoscaler/logging
     cap_add:
       - SYS_ADMIN
     network_mode: host

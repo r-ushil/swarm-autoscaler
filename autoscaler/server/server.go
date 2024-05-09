@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"logging"
 	"net/http"
 )
 
@@ -32,9 +33,9 @@ func GetManagerNode(otherNodes []SwarmNode) (SwarmNode, error) {
 func ScaleServer(scaleFunc func(serviceID string, direction string) error) {
 	scaleHandler := createScalerHandler(scaleFunc)
 	http.HandleFunc("/", scaleHandler)
-	fmt.Println("Starting HTTP server on port 4567")
+	logging.AddEventLog("Starting HTTP server on port 4567")
 	if err := http.ListenAndServe(":4567", nil); err != nil {
-		fmt.Printf("HTTP server error: %v\n", err)
+		logging.AddEventLog(fmt.Sprintf("HTTP server error: %v", err))
 	}
 }
 
@@ -94,7 +95,7 @@ func PortServer(listenOnPortFunc func(port uint32, serviceID string) error, remo
 
 	http.HandleFunc("/listen", listenHandler)
 	http.HandleFunc("/remove", removeHandler)
-	fmt.Println("Starting HTTP server on port 4568")
+	logging.AddEventLog("Starting HTTP server on port 4568")
 	if err := http.ListenAndServe(":4568", nil); err != nil {
 		fmt.Printf("HTTP server error: %v\n", err)
 	}
@@ -199,7 +200,7 @@ func SendListenRequestToAllNodes(swarmNodeInfo SwarmNodeInfo, port uint32, servi
 
 		err := SendListenRequest(port, serviceID, node.IP)
 		if err != nil {
-			fmt.Println("Error sending listen request to node:", err)
+			logging.AddEventLog(fmt.Sprintf("Failed to send listen request to node %s: %v", node.IP, err))
 			return fmt.Errorf("error sending listen request to node %s: %w", node.IP, err)
 		}
 	}
@@ -212,9 +213,9 @@ func SendRemoveRequestToAllNodes(swarmNodeInfo SwarmNodeInfo, port uint32) error
 
 		err := SendRemoveRequest(port, node.IP)
 		if err != nil {
+			logging.AddEventLog(fmt.Sprintf("Failed to send remove request to node %s: %v", node.IP, err))
 			return fmt.Errorf("error sending remove request to node %s: %w", node.IP, err)
 		}
 	}
-
 	return nil
 }

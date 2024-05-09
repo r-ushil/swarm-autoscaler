@@ -13,3 +13,7 @@ managers:
 workers:
   swarm-vm2: 192.168.2.5
   swarm-vm3: 192.168.2.6
+
+logging:
+  enable: true
+  events: false

@@ -10,7 +10,7 @@ import (
 	"github.com/cilium/ebpf/perf"
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/vishvananda/netlink"
-	"log"
+	"logging"
 	"os"
 	"server"
 	"sync"
@@ -103,7 +103,7 @@ func (s *BPFListener) Close() {
 }
 
 func (s *BPFListener) listenForEvents() {
-	log.Println("BPF program setup, listening for perf events...")
+	logging.AddEventLog("BPF program setup, listening for perf events...")
 	for {
 		select {
 		case <-s.closing:
@@ -114,7 +114,7 @@ func (s *BPFListener) listenForEvents() {
 				if err == perf.ErrClosed {
 					return // Exiting
 				}
-				log.Printf("Error reading perf event: %v", err)
+				logging.AddEventLog(fmt.Sprintf("Error reading perf event: %v", err))
 				continue
 			}
 
@@ -122,40 +122,41 @@ func (s *BPFListener) listenForEvents() {
 				port := binary.LittleEndian.Uint32(record.RawSample[:4])
 				serviceID, ok := portToServiceID.Load(port)
 				if !ok {
-					log.Printf("Service ID for port %d not found", port)
+					logging.AddEventLog(fmt.Sprintf("Service ID for port %d not found", port))
 					continue
 				}
-				log.Printf("Packet detected on port %d, triggering scale action for service %s", port, serviceID)
+				logging.AddEventLog(fmt.Sprintf("Packet detected on port %d, triggering scale action for service %s", port, serviceID))
 
 				// remove the port and scale back up
 				if err := s.RemovePort(port); err != nil {
-					log.Printf("Failed to remove port %d: %v", port, err)
+					logging.AddEventLog(fmt.Sprintf("Failed to remove port %d: %v", port, err))
 				}
 
 				if err = server.SendRemoveRequestToAllNodes(s.SwarmNodeInfo, port); err != nil {
-					log.Printf("Failed to send remove request to all nodes: %v", err)
+					logging.AddEventLog(fmt.Sprintf("Failed to send remove request to all nodes: %v", err))
 				}
 
 				if s.SwarmNodeInfo.AutoscalerManager {
-					fmt.Printf("Scaling service %s back up\n", serviceID)
+					logging.AddEventLog(fmt.Sprintf("Scaling service %s back up", serviceID))
+
 					// Call scaler to scale back up to 1.
 					s.Scaler.ScaleTo(serviceID.(string), 1)
 				} else {
-					fmt.Printf("Scaling service %s back up on manager node\n", serviceID)
+					logging.AddEventLog(fmt.Sprintf("Scaling service %s back up on manager node", serviceID))
 
 					manager, err := server.GetManagerNode(s.SwarmNodeInfo.OtherNodes)
 					if err != nil {
-						log.Printf("Failed to get manager node to scale back to 1 from worker: %v", err)
+						logging.AddEventLog(fmt.Sprintf("Failed to get manager node to scale back up to 1 from worker: %v", err))
 					}
 
 					// Send scale request to manager node from worker node
 					if err := server.SendScaleRequest(serviceID.(string), "over", manager.IP); err != nil {
-						log.Printf("Failed to send scale request to manager node: %v", err)
+						logging.AddEventLog(fmt.Sprintf("Failed to send scale request to manager node: %v", err))
 					}
 				}
 
 			} else {
-				log.Println("Received malformed perf event")
+				logging.AddEventLog(fmt.Sprintf("Received malformed perf event: %v", record.RawSample))
 			}
 		}
 	}
@@ -168,10 +169,12 @@ func (s *BPFListener) ListenOnPort(port uint32, serviceID string) error {
 	var value uint32 = 1 // need a fixed value for the eBPF map
 
 	if err := s.PortsMap.Update(port, value, ebpf.UpdateAny); err != nil {
+		logging.AddEventLog(fmt.Sprintf("Failed to add port %d to BPF map: %v", port, err))
 		return fmt.Errorf("failed to add port to BPF map: %v", err)
 	}
 
-	fmt.Printf("Listening on port %d for service %s\n", port, serviceID)
+	logging.AddEventLog(fmt.Sprintf("Listening on port %d for service %s", port, serviceID))
+	logging.AddBPFListenerLog(serviceID, port)
 	return nil
 }
 
@@ -188,7 +191,8 @@ func (s *BPFListener) RemovePort(port uint32) error {
 		return fmt.Errorf("failed to remove port from BPF map: %v", err)
 	}
 
-	fmt.Printf("Removed port %d from BPF listener\n", port)
+	logging.AddEventLog(fmt.Sprintf("Removed port %d from BPF map", port))
+	logging.RemoveBPFListenerLog(port)
 
 	return nil
 }

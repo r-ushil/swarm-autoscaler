@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"logging"
 	"os"
 	"path/filepath"
 	"scale"
@@ -28,6 +29,7 @@ type Config struct {
 	Iface            string            `yaml:"iface"`
 	Managers         map[string]string `yaml:"managers"`
 	Workers          map[string]string `yaml:"workers"`
+	Logging 		 map[string]bool   `yaml:"logging"`
 }
 
 type Resource interface {
@@ -57,19 +59,19 @@ func main() {
 
 	config, err := loadConfig(*configPath)
 	if err != nil {
-		fmt.Printf("Failed to load configuration: %v\n", err)
+		logging.AddEventLog(fmt.Sprintf("Failed to load configuration: %v", err))
 		os.Exit(1)
 	}
 
 	collectionPeriod, err := time.ParseDuration(config.CollectionPeriod)
 	if err != nil {
-		fmt.Printf("Failed to parse collection period: %v\n", err)
+		logging.AddEventLog(fmt.Sprintf("Failed to parse collection period: %v", err))
 		os.Exit(1)
 	}
 
 	swarmNodeInfo, err := createswarmNodeInfo(config)
 	if err != nil {
-		fmt.Printf("Failed to get Swarm node info: %v\n", err)
+		logging.AddEventLog(fmt.Sprintf("Failed to create swarm node info: %v", err))
 		os.Exit(1)
 	}
 
@@ -78,7 +80,7 @@ func main() {
 	cpuMonitoringEnabled := config.LowerCPU >= 0 || config.UpperCPU >= 0
 
 	if cpuMonitoringEnabled && memoryLimitSpecified {
-		fmt.Println("Please specify thresholds for either CPU or memory, not both.")
+		logging.AddEventLog("Both CPU and memory monitoring are enabled. Please specify only one.")
 		os.Exit(1)
 	}
 
@@ -106,7 +108,7 @@ func main() {
 	scaler := scale.GetScaler()
 	portListener, err := bpf_port_listen.GetBPFListener(config.Iface)
 	if err != nil {
-		fmt.Printf("Failed to setup BPF listener: %v\n", err)
+		logging.AddEventLog(fmt.Sprintf("Failed to setup BPF listener: %v", err))
 		os.Exit(1)
 	}
 
@@ -121,12 +123,12 @@ func main() {
 
 	runningContainers, err := scaler.GetRunningContainers(ctx)
 	if err != nil {
-		fmt.Printf("Failed to get running containers: %v\n", err)
+		logging.AddEventLog(fmt.Sprintf("Failed to get running containers: %v", err))
 		os.Exit(1)
 	}
 
 	for _, containerID := range runningContainers {
-		fmt.Printf("Monitoring container: %s\n", containerID)
+		logging.AddEventLog(fmt.Sprintf("Monitoring container: %s", containerID))
 		startMonitoring(ctx, containerID, resource, collectionPeriod, swarmNodeInfo)
 	}
 
@@ -136,11 +138,11 @@ func main() {
 			select {
 			case containerID := <-eventNotifier.StartChan:
 				// Start monitoring for the new container
-				fmt.Printf("Monitoring container: %s\n", containerID)
+				logging.AddEventLog(fmt.Sprintf("Monitoring container: %s", containerID))
 				startMonitoring(ctx, containerID, resource, collectionPeriod, swarmNodeInfo)
 			case containerID := <-eventNotifier.StopChan:
 				// Stop monitoring for the stopped container
-				fmt.Printf("Stopping monitoring for container: %s\n", containerID)
+				logging.AddEventLog(fmt.Sprintf("Stopping monitoring for container: %s", containerID))
 				if cancelFunc, exists := monitoringCtxMap.Load(containerID); exists {
 					cancelFunc.(context.CancelFunc)()
 					monitoringCtxMap.Delete(containerID)
@@ -161,6 +163,16 @@ func main() {
 		server.PortServer(portListener.ListenOnPort, portListener.RemovePort)
 	}()
 
+	if config.Logging["enable"] {
+		go func() {
+			for {
+				os.MkdirAll("logging", 0755)
+				logging.WriteLogs(config.Logging["events"])
+				time.Sleep(1 * time.Second)
+			}
+		}()
+	}
+
 	// Wait for a signal to terminate
 	<-ctx.Done()
 
@@ -178,11 +190,11 @@ func startMonitoring(parentCtx context.Context, containerID string, resource Res
 func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration, swarmNodeInfo *server.SwarmNodeInfo) {
 	lastUsageUsec, err := readCPUUsage(containerID) // Initial read before loop
 	if err != nil {
-		fmt.Printf("Initial CPU usage read error for container %s: %v\n", containerID, err)
+		logging.AddEventLog(fmt.Sprintf("Initial CPU usage read error for container %s: %v", containerID, err))
 		return
 	}
 
-	fmt.Printf("Started monitoring CPU for container %s\n", containerID)
+	logging.AddEventLog(fmt.Sprintf("Started monitoring CPU for container %s", containerID))
 
 	ticker := time.NewTicker(collectionPeriod)
 	defer ticker.Stop()
@@ -194,7 +206,7 @@ func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collect
 		case <-ticker.C:
 			currentUsageUsec, err := readCPUUsage(containerID)
 			if err != nil {
-				fmt.Printf("Error reading CPU usage for container %s: %v\n", containerID, err)
+				logging.AddEventLog(fmt.Sprintf("Error reading CPU usage for container %s: %v", containerID, err))
 				continue
 			}
 			usageDeltaUsec := currentUsageUsec - lastUsageUsec
@@ -202,26 +214,26 @@ func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collect
 
 			direction := determineScalingDirection(cpuUtilization, cpu.LowerUtil, cpu.UpperUtil)
 			if direction != "" {
-				fmt.Printf("ContainerID: %s, CPU Utilization: %.2f%%, Direction: %s\n", containerID, cpuUtilization, direction)
+				logging.AddContainerLog(containerID, cpuUtilization)
 				if swarmNodeInfo.AutoscalerManager {
 					if err := scale.ScaleService(containerID, direction); err != nil {
-						fmt.Printf("Error scaling service for container %s: %v\n", containerID, err)
+						logging.AddEventLog(fmt.Sprintf("Error scaling service for container %s: %v", containerID, err))
 					}
 				} else {
 					managerNode, err := server.GetManagerNode(swarmNodeInfo.OtherNodes)
 					if err != nil {
-						fmt.Printf("Error getting manager node: %v\n", err)
+						logging.AddEventLog(fmt.Sprintf("Error getting manager node: %v", err))
 						return
 					}
 					serviceId, err := scale.FindServiceIDFromContainer(containerID)
 
 					if err != nil {
-						fmt.Printf("error finding service ID from container: %v", err)
+						logging.AddEventLog(fmt.Sprintf("error finding service ID from container: %v", err))
 						return
 					}
 
 					if err := server.SendScaleRequest(serviceId, direction, managerNode.IP); err != nil {
-						fmt.Printf("Error sending scale request to manager node: %v\n", err)
+						logging.AddEventLog(fmt.Sprintf("Error sending scale request to manager node: %v", err))
 					}
 				}
 			}
@@ -239,13 +251,13 @@ func (mem *MemoryResource) Monitor(ctx context.Context, containerID string, coll
 		select {
 		case <-ctx.Done():
 			// Context has been canceled, stop monitoring this container
-			fmt.Printf("Stopped monitoring container %s due to context cancellation\n", containerID)
+			logging.AddEventLog(fmt.Sprintf("Stopped monitoring container %s due to context cancellation", containerID))
 			return
 		case <-ticker.C:
 			// Proceed with memory usage check
 			memUsage, err := readMemoryUsage(containerID)
 			if err != nil {
-				fmt.Printf("Error reading memory usage for container %s: %v\n", containerID, err)
+				logging.AddEventLog(fmt.Sprintf("Error reading memory usage for container %s: %v", containerID, err))
 				continue
 			}
 
@@ -253,27 +265,27 @@ func (mem *MemoryResource) Monitor(ctx context.Context, containerID string, coll
 
 			// Perform the scaling action if needed
 			if direction != "" {
-				fmt.Printf("ContainerID: %s, Direction: %s, Memory Used: %d MB\n", containerID, direction, memUsage)
+				logging.AddContainerLog(containerID, float64(memUsage))
 				// Assuming ScaleService handles its own context and error handling
 				if swarmNodeInfo.AutoscalerManager {
 					if err := scale.ScaleService(containerID, direction); err != nil {
-						fmt.Printf("Error scaling service for container %s: %v\n", containerID, err)
+						logging.AddEventLog(fmt.Sprintf("Error scaling service for container %s: %v", containerID, err))
 					}
 				} else {
 					managerNode, err := server.GetManagerNode(swarmNodeInfo.OtherNodes)
 					if err != nil {
-						fmt.Printf("Error getting manager node: %v\n", err)
+						logging.AddEventLog(fmt.Sprintf("Error getting manager node: %v", err))
 						return
 					}
 					serviceId, err := scale.FindServiceIDFromContainer(containerID)
 
 					if err != nil {
-						fmt.Printf("error finding service ID from container: %v", err)
+						logging.AddEventLog(fmt.Sprintf("error finding service ID from container: %v", err))
 						return
 					}
 
 					if err := server.SendScaleRequest(serviceId, direction, managerNode.IP); err != nil {
-						fmt.Printf("Error sending scale request to manager node: %v\n", err)
+						logging.AddEventLog(fmt.Sprintf("Error sending scale request to manager node: %v\n", err))
 					}
 				}
 			}
@@ -351,6 +363,7 @@ func loadConfig(path string) (*Config, error) {
 		Iface:            "eth0",
 		Managers:         make(map[string]string),
 		Workers:          make(map[string]string),
+		Logging:          make(map[string]bool),
 	}
 
 	if err := yaml.Unmarshal(file, &config); err != nil {

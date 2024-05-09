@@ -8,7 +8,11 @@ require bpf_port_listen v0.0.0
 
 require server v0.0.0
 
-require gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
+require (
+	github.com/mattn/go-runewidth v0.0.9 // indirect
+	github.com/olekukonko/tablewriter v0.0.5 // indirect
+	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
+)
 
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
@@ -47,3 +51,7 @@ replace scale => ../scale
 replace bpf_port_listen => ../bpf_port_listen
 
 replace server => ../server
+
+require logging v0.0.0 // indirect
+
+replace logging => ../logging
