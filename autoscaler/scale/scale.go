@@ -284,7 +284,7 @@ func (en *EventNotifier) ListenForEvents(ctx context.Context) {
 					logging.AddEventLog(fmt.Sprintf("Error checking ownership of container %s: %v", event.ID, err))
 					continue
 				}
-				if !owned {
+				if owned {
 					logging.AddContainerLog(event.ID, 0.0)
 					logging.AddEventLog(fmt.Sprintf("Container started: %s", event.ID))
 					en.StartChan <- event.ID
@@ -296,7 +296,7 @@ func (en *EventNotifier) ListenForEvents(ctx context.Context) {
 					continue
 				}
 
-				if !owned {
+				if owned {
 					logging.AddEventLog(fmt.Sprintf("Container stopped: %s", event.ID))
 					logging.RemoveContainerLog(event.ID)
 					en.StopChan <- event.ID
