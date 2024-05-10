@@ -3,11 +3,3 @@ services:
     image: httpd:latest
     ports:
       - "8080:80"
-    labels:
-      autoscaler.handlerNode: "swarm-vm1"
-    deploy:
-      labels:
-        autoscaler.handlerNode: "swarm-vm1"
-      placement:
-        constraints:
-          - node.hostname==swarm-vm1

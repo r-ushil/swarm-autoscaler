@@ -3,16 +3,18 @@ package scale
 import (
 	"context"
 	"fmt"
+	"logging"
+	"os"
+	"server"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
-	"logging"
-	"os"
-	"server"
-	"sync"
-	"time"
 )
 
 type PortListener interface {
@@ -94,7 +96,9 @@ func updateServiceConstraints(service swarm.Service, add bool) error {
 
 	hostName, exists := service.Spec.Labels["autoscaler.handlerNode"]
 	if !exists {
-		return fmt.Errorf("handlerNode label not found on service %s in updateServiceConstraints", service.ID)
+		// Return nil when using implicit ownership
+		return nil
+		// return fmt.Errorf("handlerNode label not found on service %s in updateServiceConstraints", service.ID)
 	}
 
 	// Update the service with the new constraints
@@ -257,15 +261,8 @@ func (s *ScaleManager) NewEventNotifier() *EventNotifier {
 func (en *EventNotifier) ListenForEvents(ctx context.Context) {
 	cli := instance.cli
 
-	hostname, err := os.Hostname()
-	if err != nil {
-		fmt.Println("Error getting hostname in ListenForEvents:", err)
-		os.Exit(1)
-	}
-
 	filters := filters.NewArgs(
 		filters.Arg("type", "container"),
-		filters.Arg("label", "autoscaler.handlerNode="+hostname),
 		filters.Arg("event", "start"),
 		filters.Arg("event", "die"),
 	)
@@ -282,13 +279,28 @@ func (en *EventNotifier) ListenForEvents(ctx context.Context) {
 		case event := <-eventsCh:
 			switch event.Action {
 			case "start":
-				logging.AddContainerLog(event.ID, 0.0)
-				logging.AddEventLog(fmt.Sprintf("Container started: %s", event.ID))
-				en.StartChan <- event.ID
+				owned, err := CheckOwnedContainer(event.ID)
+				if err != nil {
+					logging.AddEventLog(fmt.Sprintf("Error checking ownership of container %s: %v", event.ID, err))
+					continue
+				}
+				if !owned {
+					logging.AddContainerLog(event.ID, 0.0)
+					logging.AddEventLog(fmt.Sprintf("Container started: %s", event.ID))
+					en.StartChan <- event.ID
+				}
 			case "die":
-				logging.AddEventLog(fmt.Sprintf("Container stopped: %s", event.ID))
-				logging.RemoveContainerLog(event.ID)
-				en.StopChan <- event.ID
+				owned, err := CheckOwnedContainer(event.ID)
+				if err != nil {
+					logging.AddEventLog(fmt.Sprintf("Error checking ownership of container %s: %v", event.ID, err))
+					continue
+				}
+
+				if !owned {
+					logging.AddEventLog(fmt.Sprintf("Container stopped: %s", event.ID))
+					logging.RemoveContainerLog(event.ID)
+					en.StopChan <- event.ID
+				}
 			}
 		case err := <-errsCh:
 			if err != nil {
@@ -305,33 +317,55 @@ func (en *EventNotifier) ListenForEvents(ctx context.Context) {
 // GetRunningContainers returns a slice of container IDs for all currently running containers.
 func (s ScaleManager) GetRunningContainers(ctx context.Context) ([]string, error) {
 	cli := instance.cli
-
-	hostname, err := os.Hostname()
-	if err != nil {
-		logging.AddEventLog(fmt.Sprintf("Error getting hostname in GetRunningContainers: %v", err))
-		os.Exit(1)
-	}
-
-	filters := filters.NewArgs()
-	filters.Add("label", "autoscaler.handlerNode="+hostname)
-
-	listOptions := container.ListOptions{
-		Filters: filters,
-	}
-
-	containers, err := cli.ContainerList(ctx, listOptions)
+	containers, err := cli.ContainerList(ctx, container.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("error listing Docker containers: %w", err)
 	}
 
 	var containerIDs []string
 	for _, container := range containers {
-
-		containerIDs = append(containerIDs, container.ID)
-
+		owned, err := CheckOwnedContainer(container.ID)
+		if err != nil {
+			logging.AddEventLog(fmt.Sprintf("Error checking ownership of container %s: %v", container.ID, err))
+			continue
+		}
+		if owned {
+			containerIDs = append(containerIDs, container.ID)
+		}
 	}
 
 	logging.AddEventLog(fmt.Sprintf("Found %d running containers", len(containerIDs)))
 
 	return containerIDs, nil
+}
+
+
+func CheckOwnedContainer(containerID string) (bool, error) {
+	ctx := context.Background()
+	cli := instance.cli
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		logging.AddEventLog(fmt.Sprintf("Error getting hostname in CheckOwnedContainer: %v", err))
+		return false, err
+	}
+
+	container, err := cli.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return false, err
+	}
+
+	// check if explicit ownership
+	hostnameLabel, exists := container.Config.Labels["autoscaler.handlerNode"]
+	if exists {
+		return hostnameLabel == hostname, nil
+	}
+
+	// check if implicit ownership
+	taskName, exists := container.Config.Labels["com.docker.swarm.task.name"]
+	if exists && strings.Contains(taskName, ".1.") {
+		return true, nil
+	}
+
+	return false, nil
 }
