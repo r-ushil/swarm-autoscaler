@@ -26,6 +26,7 @@ type Config struct {
 	LowerGB          int64             `yaml:"lower-mg"`
 	UpperGB          int64             `yaml:"upper-mg"`
 	CollectionPeriod string            `yaml:"collection-period"`
+	KeepAlive        string            `yaml:"keep-alive"`
 	Iface            string            `yaml:"iface"`
 	Managers         map[string]string `yaml:"managers"`
 	Workers          map[string]string `yaml:"workers"`
@@ -359,6 +360,7 @@ func loadConfig(path string) (*Config, error) {
 		UpperMB:          -1,
 		LowerGB:          -1,
 		UpperGB:          -1,
+		KeepAlive:        "5s",
 		CollectionPeriod: "10s",
 		Iface:            "eth0",
 		Managers:         make(map[string]string),
@@ -382,6 +384,14 @@ func createswarmNodeInfo(config *Config) (*server.SwarmNodeInfo, error) {
 	swarmNodeInfo := server.SwarmNodeInfo{
 		AutoscalerManager: false,
 		OtherNodes:        make([]server.SwarmNode, 0),
+	}
+
+	keepAlive, err := time.ParseDuration(config.KeepAlive)
+	if err != nil {
+		logging.AddEventLog(fmt.Sprintf("Failed to parse keep alive: %v", err))
+		os.Exit(1)
+	} else {
+		swarmNodeInfo.KeepAlive = keepAlive
 	}
 
 	// Check if this node is a manager

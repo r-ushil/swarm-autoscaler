@@ -25,6 +25,7 @@ type ScaleManager struct {
 	cli          *client.Client
 	portListener PortListener
 	nodeInfo     server.SwarmNodeInfo
+	keepAliveOps map[string]chan bool
 }
 
 var instance *ScaleManager
@@ -54,11 +55,11 @@ func (manager *ScaleManager) initScaler() {
 	manager.cli = cli
 	manager.portListener = nil
 	manager.nodeInfo = server.SwarmNodeInfo{}
+	manager.keepAliveOps = make(map[string]chan bool)
 }
 
 // ScaleService adjusts the service replicas based on the direction for the given container ID.
 func ScaleService(containerID string, direction string) error {
-
 	serviceID, err := FindServiceIDFromContainer(containerID)
 	if err != nil {
 		return fmt.Errorf("error finding service ID from container: %w", err)
@@ -98,7 +99,6 @@ func updateServiceConstraints(service swarm.Service, add bool) error {
 	if !exists {
 		// Return nil when using implicit ownership
 		return nil
-		// return fmt.Errorf("handlerNode label not found on service %s in updateServiceConstraints", service.ID)
 	}
 
 	// Update the service with the new constraints
@@ -118,11 +118,10 @@ func updateServiceConstraints(service swarm.Service, add bool) error {
 	return err
 }
 
-// changeServiceReplicas changes the number of replicas for the given service ID based on direction.
+// ChangeServiceReplicas changes the number of replicas for the given service ID based on direction.
 // only runs on manager node
 func ChangeServiceReplicas(serviceID string, direction string) error {
 	// should never be called on a non-manager node
-
 	if !instance.nodeInfo.AutoscalerManager {
 		return fmt.Errorf("changeServiceReplicas should only be called on manager node")
 	}
@@ -144,10 +143,18 @@ func ChangeServiceReplicas(serviceID string, direction string) error {
 			if currentReplicas == 1 {
 				// Remove the constraint to run on the specified hostname
 				if err := updateServiceConstraints(service, false); err != nil {
-					return fmt.Errorf("error adding constraint to service: %w", err)
+					return fmt.Errorf("error removing constraint from service: %w", err)
 				}
 			}
 			newReplicas = currentReplicas + 1
+
+			// Cancel keep-alive operation if exists
+			if keepAliveCh, exists := instance.keepAliveOps[serviceID]; exists {
+				keepAliveCh <- true
+				delete(instance.keepAliveOps, serviceID)
+				logging.AddEventLog(fmt.Sprintf("Cancelled KeepAlive operation for service %s due to scaling up", serviceID))
+			}
+
 		} else if direction == "under" {
 			// Ensure we don't go below 1 replica
 			if currentReplicas > 1 {
@@ -159,26 +166,19 @@ func ChangeServiceReplicas(serviceID string, direction string) error {
 					}
 				}
 			} else {
-
-				port, err := getPublishedPort(serviceID)
-				if err != nil {
-					return err
+				if _, exists := instance.keepAliveOps[serviceID]; exists {
+					logging.AddEventLog(fmt.Sprintf("Ignoring scaling request for service %s due to existing KeepAlive operation", serviceID))
+					return nil
 				}
 
-				if err := instance.portListener.ListenOnPort(port, serviceID); err != nil {
-					return fmt.Errorf("failed to listen on port: %w", err)
-				}
+				// Create a channel to signal keep-alive operation
+				keepAliveCh := make(chan bool)
+				instance.keepAliveOps[serviceID] = keepAliveCh
 
-				// add port to all listeners by making a request to the server
-				err = server.SendListenRequestToAllNodes(instance.nodeInfo, port, serviceID)
+				// Start the keep-alive goroutine
+				go keepAliveAndScaleDown(serviceID, keepAliveCh)
 
-				if err != nil {
-					return fmt.Errorf("error sending listen request to all nodes: %w", err)
-				}
-
-				// scale to 0
-				scaleTo(serviceID, 0)
-
+				logging.AddEventLog(fmt.Sprintf("Started KeepAlive operation for service %s", serviceID))
 				return nil
 			}
 		} else {
@@ -188,9 +188,7 @@ func ChangeServiceReplicas(serviceID string, direction string) error {
 		return fmt.Errorf("service mode is not replicated or replicas are not set")
 	}
 
-	scaleTo(serviceID, newReplicas)
-
-	return nil
+	return scaleTo(serviceID, newReplicas)
 }
 
 func (s *ScaleManager) ScaleTo(serviceID string, replicas uint64) error {
@@ -241,6 +239,45 @@ func getPublishedPort(serviceID string) (uint32, error) {
 	}
 
 	return publishedPort, nil
+}
+
+// keepAliveAndScaleDown handles the keep-alive logic and scales down the service after the keep-alive period
+func keepAliveAndScaleDown(serviceID string, keepAliveCh chan bool) {
+	select {
+	case <-time.After(instance.nodeInfo.KeepAlive):
+		if _, exists := instance.keepAliveOps[serviceID]; exists {
+			logging.AddEventLog(fmt.Sprintf("Completed KeepAlive operation for service %s", serviceID))
+			port, err := getPublishedPort(serviceID)
+			if err != nil {
+				logging.AddEventLog(fmt.Sprintf("Error getting published port for service %s: %v", serviceID, err))
+				return
+			}
+
+			if err := instance.portListener.ListenOnPort(port, serviceID); err != nil {
+				logging.AddEventLog(fmt.Sprintf("Failed to listen on port for service %s: %v", serviceID, err))
+				return
+			}
+
+			err = server.SendListenRequestToAllNodes(instance.nodeInfo, port, serviceID)
+			if err != nil {
+				logging.AddEventLog(fmt.Sprintf("Error sending listen request to all nodes for service %s: %v", serviceID, err))
+				return
+			}
+
+			err = scaleTo(serviceID, 0)
+			if err != nil {
+				logging.AddEventLog(fmt.Sprintf("Error scaling service %s to 0: %v", serviceID, err))
+				return
+			}
+			
+			// Remove the keep-alive operation from the map
+			delete(instance.keepAliveOps, serviceID)
+			
+		}
+	case <-keepAliveCh:
+		// Keep-alive operation was canceled
+		logging.AddEventLog(fmt.Sprintf("KeepAlive operation for service %s was canceled", serviceID))
+	}
 }
 
 // EventNotifier notifies about container start and stop events.
@@ -338,7 +375,6 @@ func (s ScaleManager) GetRunningContainers(ctx context.Context) ([]string, error
 
 	return containerIDs, nil
 }
-
 
 func CheckOwnedContainer(containerID string) (bool, error) {
 	ctx := context.Background()

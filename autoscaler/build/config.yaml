@@ -1,18 +1,19 @@
 # autoscaler config
 
-lower-cpu: 0.1
+lower-cpu: 10
 upper-cpu: 50
 
 collection-period: 5s
+keep-alive: 10s
 
-iface: eth0
+iface: wlp60s0
 
 managers:
-  swarm-vm1: 192.168.2.4
+  lucario: 127.0.0.1
 
-workers:
-  swarm-vm2: 192.168.2.5
-  swarm-vm3: 192.168.2.6
+  #workers:
+  #  swarm-vm2: 192.168.2.5
+  #swarm-vm3: 192.168.2.6
 
 logging:
   enable: true

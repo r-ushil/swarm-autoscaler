@@ -122,7 +122,7 @@ func (s *BPFListener) listenForEvents() {
 				port := binary.LittleEndian.Uint32(record.RawSample[:4])
 				serviceID, ok := portToServiceID.Load(port)
 				if !ok {
-					logging.AddEventLog(fmt.Sprintf("Service ID for port %d not found", port))
+					logging.AddEventLog(fmt.Sprintf("Service ID for port %d removed, not blocking request", port))
 					continue
 				}
 				logging.AddEventLog(fmt.Sprintf("Packet detected on port %d, triggering scale action for service %s", port, serviceID))
@@ -182,7 +182,7 @@ func (s *BPFListener) RemovePort(port uint32) error {
 	// Removing the port from the local Go map.
 	serviceID, ok := portToServiceID.Load(port)
 	if !ok {
-		return fmt.Errorf("service ID %s for port %d not found", serviceID, port)
+		return fmt.Errorf("service ID %s for port %d not found in RemovePort", serviceID, port)
 	}
 	portToServiceID.Delete(port)
 

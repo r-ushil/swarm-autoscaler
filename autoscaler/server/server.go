@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"logging"
 	"net/http"
+	"time"
 )
 
 // SwarmNodeInfo represents the node-specific information
 type SwarmNodeInfo struct {
 	AutoscalerManager bool
 	OtherNodes        []SwarmNode
+	KeepAlive         time.Duration
 }
 
 type SwarmNode struct {
