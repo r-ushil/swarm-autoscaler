@@ -2,12 +2,12 @@
 services:
   swarm-autoscaler: 
     image: rushpate/swarm-autoscaler:latest
-    hostname: ${HOSTNAME}
+    hostname: ${HOSTNAME} # for autoscaler node info resolution
     volumes:
-      - /sys/fs/cgroup:/sys/fs/cgroup:ro
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./config.yaml:/autoscaler/config.yaml:ro
-      - ./logging:/autoscaler/logging
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro # for metric montoring
+      - /var/run/docker.sock:/var/run/docker.sock # for Docker API
+      - ./config.yaml:/autoscaler/config.yaml:ro # for config
+      - ./logging:/autoscaler/logging # (optional) for logfile
     cap_add:
-      - SYS_ADMIN
-    network_mode: host
+      - SYS_ADMIN # for BPF priviledges
+    network_mode: host # to detect host ports
