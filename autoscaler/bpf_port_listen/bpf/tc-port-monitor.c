@@ -58,11 +58,7 @@ int port_classifier(struct __sk_buff *skb) {
     u32 tcp_dest_port = __builtin_bswap16(tcp->dest); // Convert network byte order to host byte order
     u32 *found = bpf_map_lookup_elem(&ports_map, &tcp_dest_port);
     if (found) {
-        bpf_printk("Packet received\n");
         long value = tcp_dest_port; // Pass the detected port as the value
-        bpf_perf_event_output(skb, &events, BPF_F_CURRENT_CPU, &value, sizeof(value));
-    } else {
-        bpf_printk("Port not found\n");
     }
 
     return TC_ACT_OK;
