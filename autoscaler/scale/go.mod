@@ -37,6 +37,6 @@ require server v0.0.0
 
 replace server => ../server
 
-require logging v0.0.0 // indirect
+require logging v0.0.0
 
 replace logging => ../logging
