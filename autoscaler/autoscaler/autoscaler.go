@@ -3,6 +3,7 @@ package main
 import (
 	"bpf_port_listen"
 	"cgroup_monitoring"
+	"conc_req_monitoring"
 	"context"
 	"flag"
 	"fmt"
@@ -33,7 +34,7 @@ type Config struct {
 	UpperGB                int64             `yaml:"upper-mg"`
 	LowerConcReq           int64             `yaml:"lower-conc-req"`
 	UpperConcReq           int64             `yaml:"upper-conc-req"`
-	ReqThresholdTolerance  int64             `yaml:"req-threshold-tolerance"` 
+	ReqBufferLength        int64             `yaml:"req-buffer-length"` 
 	CollectionPeriod       string            `yaml:"collection-period"`
 	KeepAlive              string            `yaml:"keep-alive"`
 	Iface                  string            `yaml:"iface"`
@@ -43,6 +44,7 @@ type Config struct {
 }
 
 func main() {
+
 	configPath := flag.String("config", "", "Path to the configuration file")
 
 	flag.Parse()
@@ -93,8 +95,14 @@ func main() {
 		}
 		resource = &cgroup_monitoring.MemoryResource{LowerLimit: lowerLimit, UpperLimit: upperLimit}
 	} else if concReqMonitoringEnabled {
-		// make ConcReqResource here
+		concreqresource := &conc_req_monitoring.ConcReqResource{LowerLimit: config.LowerConcReq, UpperLimit: config.UpperConcReq, BufferLength: config.ReqBufferLength}
+		// setup bpf listener
+		if err := conc_req_monitoring.InitBPFListener(*concreqresource); err != nil {
+			fmt.Printf(err.Error())
+			os.Exit(1)
+		}
 		
+		resource = concreqresource
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -198,7 +206,7 @@ func loadConfig(path string) (*Config, error) {
 		UpperGB:               -1,
 		LowerConcReq:          -1,
 		UpperConcReq:          -1,
-		ReqThresholdTolerance: 5,
+		ReqBufferLength:       5,
 		KeepAlive:             "5s",
 		CollectionPeriod:      "10s",
 		Iface:                 "eth0",

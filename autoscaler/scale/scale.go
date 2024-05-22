@@ -221,7 +221,7 @@ func scaleTo(serviceID string, replicas uint64) error {
 	return nil
 }
 
-func getPublishedPort(serviceID string) (uint32, error) {
+func GetPublishedPort(serviceID string) (uint32, error) {
 	ctx := context.Background()
 	cli := instance.cli
 
@@ -247,7 +247,7 @@ func keepAliveAndScaleDown(serviceID string, keepAliveCh chan bool) {
 	case <-time.After(instance.nodeInfo.KeepAlive):
 		if _, exists := instance.keepAliveOps[serviceID]; exists {
 			logging.AddEventLog(fmt.Sprintf("Completed KeepAlive operation for service %s", serviceID))
-			port, err := getPublishedPort(serviceID)
+			port, err := GetPublishedPort(serviceID)
 			if err != nil {
 				logging.AddEventLog(fmt.Sprintf("Error getting published port for service %s: %v", serviceID, err))
 				return

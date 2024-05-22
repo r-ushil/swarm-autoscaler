@@ -6,7 +6,7 @@ require logging v0.0.0
 
 require (
 	github.com/Microsoft/go-winio v0.4.14 // indirect
-	github.com/cilium/ebpf v0.14.0 // indirect
+	github.com/cilium/ebpf v0.15.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/docker v26.0.1+incompatible // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
@@ -58,3 +58,7 @@ replace server => ../server
 require cgroup_monitoring v0.0.0
 
 replace cgroup_monitoring => ../cgroup_monitoring
+
+require conc_req_monitoring v0.0.0
+
+replace conc_req_monitoring => ../conc_req_monitoring
