@@ -12,6 +12,12 @@ bpf_program = """
 BPF_HASH(active_connections_map, u16, u32);
 BPF_HASH(constants_map, u32, u32);
 BPF_HASH(buffer_map, u16, u32);
+BPF_PERF_OUTPUT(events);
+
+struct data_t {
+    u16 port;
+    char message[6];
+};
 
 TRACEPOINT_PROBE(sock, inet_sock_set_state) {
     u16 dport = args->dport;  // destination port
@@ -19,6 +25,7 @@ TRACEPOINT_PROBE(sock, inet_sock_set_state) {
     u32 new_value;
     u32 key;
     u32 *lowerLimit, *upperLimit, *bufferLength, *buffer;
+    struct data_t data = {};
 
     // Retrieve constants from the map
     key = 0;
@@ -66,8 +73,15 @@ TRACEPOINT_PROBE(sock, inet_sock_set_state) {
     buffer_map.update(&dport, buffer);
 
     if (*buffer == *bufferLength) {
+        data.port = dport;
+        if (new_value <= *lowerLimit) {
+            __builtin_memcpy(data.message, "Lower", 5);
+        } else {
+            __builtin_memcpy(data.message, "Upper", 5);
+        }
+        data.message[5] = '\\0';  // Ensure null-termination
+        events.perf_submit(args, &data, sizeof(data));
         
-        bpf_trace_printk("Port: %d, BufferLength: %d, Exceeded: %s\\n", dport, *bufferLength, (new_value <= *lowerLimit) ? "Lower" : "Upper");
         u32 zero = 0;
         buffer_map.update(&dport, &zero);
     }
@@ -98,17 +112,24 @@ active_connections_map[port_8080] = ctypes.c_uint32(0)
 # Map to hold port buffer values
 buffer_map = b["buffer_map"]
 
+# Define the data structure in Python
+class Data(ctypes.Structure):
+    _fields_ = [("port", ctypes.c_uint16),
+                ("message", ctypes.c_char * 6)]
+
+# Callback function to handle events
+def print_event(cpu, data, size):
+    event = ctypes.cast(data, ctypes.POINTER(Data)).contents
+    print(f"Port: {event.port}, Exceeded: {event.message.decode('utf-8')}")
+
+# Open perf buffer to receive events
+b["events"].open_perf_buffer(print_event)
+
 print("Monitoring active TCP connections on specified ports... Press Ctrl+C to exit.")
 
 try:
     while True:
-        print("Active connections per port:")
-        for key, leaf in b["active_connections_map"].items():
-            print(f"Port {key.value}: {leaf.value} active connections")
-
-        for key, leaf in b["buffer_map"].items():
-            print(f"Port {key.value}: {leaf.value} buffer count")
-
+        b.perf_buffer_poll()
         time.sleep(2)
 except KeyboardInterrupt:
     print("Exiting...")
