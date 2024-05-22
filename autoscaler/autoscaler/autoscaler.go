@@ -25,18 +25,21 @@ var (
 )
 
 type Config struct {
-	LowerCPU         float64           `yaml:"lower-cpu"`
-	UpperCPU         float64           `yaml:"upper-cpu"`
-	LowerMB          int64             `yaml:"lower-mm"`
-	UpperMB          int64             `yaml:"upper-mm"`
-	LowerGB          int64             `yaml:"lower-mg"`
-	UpperGB          int64             `yaml:"upper-mg"`
-	CollectionPeriod string            `yaml:"collection-period"`
-	KeepAlive        string            `yaml:"keep-alive"`
-	Iface            string            `yaml:"iface"`
-	Managers         map[string]string `yaml:"managers"`
-	Workers          map[string]string `yaml:"workers"`
-	Logging 		 map[string]bool   `yaml:"logging"`
+	LowerCPU               float64           `yaml:"lower-cpu"`
+	UpperCPU               float64           `yaml:"upper-cpu"`
+	LowerMB                int64             `yaml:"lower-mm"`
+	UpperMB                int64             `yaml:"upper-mm"`
+	LowerGB                int64             `yaml:"lower-mg"`
+	UpperGB                int64             `yaml:"upper-mg"`
+	LowerConcReq           int64             `yaml:"lower-conc-req"`
+	UpperConcReq           int64             `yaml:"upper-conc-req"`
+	ReqThresholdTolerance  int64             `yaml:"req-threshold-tolerance"` 
+	CollectionPeriod       string            `yaml:"collection-period"`
+	KeepAlive              string            `yaml:"keep-alive"`
+	Iface                  string            `yaml:"iface"`
+	Managers               map[string]string `yaml:"managers"`
+	Workers                map[string]string `yaml:"workers"`
+	Logging 		       map[string]bool   `yaml:"logging"`
 }
 
 func main() {
@@ -63,17 +66,19 @@ func main() {
 	}
 
 	var resource Resource
-	memoryLimitSpecified := config.LowerMB >= 0 || config.UpperMB >= 0 || config.LowerGB >= 0 || config.UpperGB >= 0
+	memoryMonitoringEnabled := config.LowerMB >= 0 || config.UpperMB >= 0 || config.LowerGB >= 0 || config.UpperGB >= 0
 	cpuMonitoringEnabled := config.LowerCPU >= 0 || config.UpperCPU >= 0
+	concReqMonitoringEnabled := config.LowerConcReq >= 0 || config.UpperConcReq >= 0
 
-	if cpuMonitoringEnabled && memoryLimitSpecified {
-		logging.AddEventLog("Both CPU and memory monitoring are enabled. Please specify only one.")
+	if (cpuMonitoringEnabled && memoryMonitoringEnabled) || (memoryMonitoringEnabled && concReqMonitoringEnabled) || (cpuMonitoringEnabled && concReqMonitoringEnabled) {
+		logging.AddEventLog("More than one of CPU, memory or concurrent request monitoring are enabled. Please specific only one.")
 		os.Exit(1)
 	}
 
+
 	if cpuMonitoringEnabled {
 		resource = &cgroup_monitoring.CPUResource{LowerUtil: config.LowerCPU, UpperUtil: config.UpperCPU}
-	} else if memoryLimitSpecified {
+	} else if memoryMonitoringEnabled {
 		var lowerLimit, upperLimit int64
 		// Explicitly choose GB over MB if both are provided, instead of summing them
 		if config.LowerGB > 0 {
@@ -87,6 +92,9 @@ func main() {
 			upperLimit = config.UpperMB
 		}
 		resource = &cgroup_monitoring.MemoryResource{LowerLimit: lowerLimit, UpperLimit: upperLimit}
+	} else if concReqMonitoringEnabled {
+		// make ConcReqResource here
+		
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -182,18 +190,21 @@ func loadConfig(path string) (*Config, error) {
 
 	// set default values to avoid nil pointers
 	config := Config{
-		LowerCPU:         -1,
-		UpperCPU:         -1,
-		LowerMB:          -1,
-		UpperMB:          -1,
-		LowerGB:          -1,
-		UpperGB:          -1,
-		KeepAlive:        "5s",
-		CollectionPeriod: "10s",
-		Iface:            "eth0",
-		Managers:         make(map[string]string),
-		Workers:          make(map[string]string),
-		Logging:          make(map[string]bool),
+		LowerCPU:              -1,
+		UpperCPU:              -1,
+		LowerMB:               -1,
+		UpperMB:               -1,
+		LowerGB:               -1,
+		UpperGB:               -1,
+		LowerConcReq:          -1,
+		UpperConcReq:          -1,
+		ReqThresholdTolerance: 5,
+		KeepAlive:             "5s",
+		CollectionPeriod:      "10s",
+		Iface:                 "eth0",
+		Managers:              make(map[string]string),
+		Workers:               make(map[string]string),
+		Logging:               make(map[string]bool),
 	}
 
 	if err := yaml.Unmarshal(file, &config); err != nil {
