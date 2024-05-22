@@ -1,5 +1,5 @@
 package conc_req_monitoring
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang BPF bpf/conc_req_monitoring.c --  -I/usr/src/linux-6.9.1-1/include -I/usr/include/bpf 
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang BPF bpf/conc_req_monitoring.c -- -I/usr/include/ 
 
 
 import (
