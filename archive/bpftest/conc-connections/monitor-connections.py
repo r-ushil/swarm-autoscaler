@@ -73,7 +73,7 @@ TRACEPOINT_PROBE(sock, inet_sock_set_state) {
     buffer_map.update(&dport, buffer);
 
     if (*buffer == *bufferLength) {
-        data.port = dport;
+        data.port = *active_connections;
         if (new_value <= *lowerLimit) {
             __builtin_memcpy(data.message, "Lower", 5);
         } else {

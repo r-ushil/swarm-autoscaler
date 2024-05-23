@@ -27,6 +27,14 @@ struct {
 } buffer_map SEC(".maps");
 
 struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, __u16);
+    __type(value, __u32);
+    __uint(max_entries, 1024);
+} scaling_map SEC(".maps");
+
+
+struct {
     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
 } events SEC(".maps");
 
@@ -52,7 +60,7 @@ int trace_inet_sock_set_state(struct trace_event_raw_inet_sock_set_state *ctx) {
     __u32 *active_connections;
     __u32 new_value;
     __u32 key;
-    __u32 *lowerLimit, *upperLimit, *bufferLength, *buffer;
+    __u32 *lowerLimit, *upperLimit, *bufferLength, *buffer, *scaling;
     struct data_t data = {};
 
     // Retrieve constants from the map
@@ -85,6 +93,11 @@ int trace_inet_sock_set_state(struct trace_event_raw_inet_sock_set_state *ctx) {
         return 0;
     }
 
+    scaling = bpf_map_lookup_elem(&scaling_map, &dport);
+    if (scaling && *scaling == 1) {
+        return 0;
+    }
+
     // Update buffer map based on active connections
     buffer = bpf_map_lookup_elem(&buffer_map, &dport);
     if (!buffer) {
@@ -105,6 +118,9 @@ int trace_inet_sock_set_state(struct trace_event_raw_inet_sock_set_state *ctx) {
     bpf_map_update_elem(&buffer_map, &dport, buffer, BPF_ANY);
 
     if (*buffer == *bufferLength) {
+        __u32 scaling_value = 1;
+        bpf_map_update_elem(&scaling_map, &dport, &scaling_value, BPF_ANY);
+
         data.port = dport;
         if (new_value <= *lowerLimit) {
             __builtin_memcpy(data.message, "Lower", 5);

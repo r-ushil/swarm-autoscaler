@@ -13,6 +13,7 @@ import (
 	"time"
 	"scale"
 	"server"
+	"strings"
     "sync"
     "github.com/cilium/ebpf"
     "github.com/cilium/ebpf/link"
@@ -31,6 +32,7 @@ type BPFListener struct {
     ConstantsMap         *ebpf.Map
 	BufferMap            *ebpf.Map
     ActiveConnectionsMap *ebpf.Map
+	ScalingMap           *ebpf.Map
     Events               *ebpf.Map
     Tracepoint           link.Link
     closing              chan struct{}
@@ -107,6 +109,7 @@ func InitBPFListener(resource ConcReqResource) error {
         ConstantsMap:         objs.ConstantsMap,
 		BufferMap:            objs.BufferMap,
         ActiveConnectionsMap: objs.ActiveConnectionsMap,
+		ScalingMap:           objs.ScalingMap,
         Events:               objs.Events,
         Tracepoint:           tp,
         closing:              make(chan struct{}),
@@ -114,8 +117,6 @@ func InitBPFListener(resource ConcReqResource) error {
     }
 
     go listener.listenForEvents()
-
-	defer listener.Close()
 
 	lowerLimitKey := uint32(0)
     upperLimitKey := uint32(1)
@@ -195,6 +196,8 @@ func addPort(port uint16, portCtx PortContext) error {
         return err
     }
 
+	addPortToScalingMap(uint16(port))
+
 	portToContext.Store(port, portCtx)
 
 	logging.AddEventLog(fmt.Sprintf("Monitoring on port %d", port))
@@ -214,6 +217,14 @@ func removePort(port uint16) error {
 	}
 
 	portToContext.Delete(port)
+	return nil
+}
+
+func addPortToScalingMap(port uint16) error {
+	if err := listenerInstance.ScalingMap.Put(port, uint32(0)); err != nil {
+		log.Printf("Failed to update port %d from ScalingMap: %v", port, err)
+	}
+
 	return nil
 }
 
@@ -256,6 +267,10 @@ func (resource *ConcReqResource) Monitor(ctx context.Context, containerID string
 		case threshold := <-signal:
 			var direction string
 			
+
+			// Trim null character from eBPF program
+			threshold = strings.Trim(threshold, "\x00")
+			
 			if threshold == "Lower" {
 				direction = "under"
 			} else if threshold == "Upper" {
@@ -281,6 +296,10 @@ func (resource *ConcReqResource) Monitor(ctx context.Context, containerID string
 					logging.AddEventLog(fmt.Sprintf("Error sending scale request to manager node: %v", err))
 				}
 			}
+
+			// sleep to wait for scaling then add port back to BPF program
+			time.Sleep(time.Second * 10)
+			addPortToScalingMap(uint16(port))
 		}
 	}
 }

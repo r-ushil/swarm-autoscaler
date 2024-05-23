@@ -64,6 +64,7 @@ type BPFMapSpecs struct {
 	BufferMap            *ebpf.MapSpec `ebpf:"buffer_map"`
 	ConstantsMap         *ebpf.MapSpec `ebpf:"constants_map"`
 	Events               *ebpf.MapSpec `ebpf:"events"`
+	ScalingMap           *ebpf.MapSpec `ebpf:"scaling_map"`
 }
 
 // BPFObjects contains all objects after they have been loaded into the kernel.
@@ -89,6 +90,7 @@ type BPFMaps struct {
 	BufferMap            *ebpf.Map `ebpf:"buffer_map"`
 	ConstantsMap         *ebpf.Map `ebpf:"constants_map"`
 	Events               *ebpf.Map `ebpf:"events"`
+	ScalingMap           *ebpf.Map `ebpf:"scaling_map"`
 }
 
 func (m *BPFMaps) Close() error {
@@ -97,6 +99,7 @@ func (m *BPFMaps) Close() error {
 		m.BufferMap,
 		m.ConstantsMap,
 		m.Events,
+		m.ScalingMap,
 	)
 }
 

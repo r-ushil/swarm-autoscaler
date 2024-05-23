@@ -1,8 +1,8 @@
 # autoscaler config
 
 # CPU Util thresholds
-lower-cpu: 10
-upper-cpu: 50
+# lower-cpu: 10
+# upper-cpu: 50
 
 # Memory (MB) thresholds
 # lower-mm: 100
@@ -11,6 +11,11 @@ upper-cpu: 50
 # Memory (GB) thresholds
 # lower-gb: 0.1
 # upper-gb: 2
+
+# Concurrent Network Request thresholds
+lower-conc-req: 3
+upper-conc-req: 10
+req-buffer-length: 500
 
 # how often we poll the cgroup filesystem for metrics
 collection-period: 5s
@@ -23,12 +28,12 @@ iface: eth0
 
 # list of manager nodes (hostnames) to IPs
 managers:
-  swarm-vm1: 192.168.2.4
+  swarm-vm1: 192.168.2.4 
 
 # list of worker nodes (hostnames) to IPs
-workers:
-  swarm-vm2: 192.168.2.5
-  swarm-vm3: 192.168.2.6
+#workers:
+#  swarm-vm2: 192.168.2.5
+#  swarm-vm3: 192.168.2.6
 
 # write autoscaler logs to a file (/autoscaler/logging/autoscaler.log)
 logging:
