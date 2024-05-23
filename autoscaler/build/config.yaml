@@ -15,7 +15,7 @@
 # Concurrent Network Request thresholds
 lower-conc-req: 3
 upper-conc-req: 10
-req-buffer-length: 500
+req-buffer-length: 5
 
 # how often we poll the cgroup filesystem for metrics
 collection-period: 5s
@@ -24,11 +24,11 @@ collection-period: 5s
 keep-alive: 10s
 
 # network interface on hosts used for traffic
-iface: eth0
+iface: wlp60s0
 
 # list of manager nodes (hostnames) to IPs
 managers:
-  swarm-vm1: 192.168.2.4 
+  lucario: 127.0.0.1 
 
 # list of worker nodes (hostnames) to IPs
 #workers:
