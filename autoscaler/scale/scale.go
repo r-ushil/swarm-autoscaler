@@ -15,6 +15,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
+	"golang.org/x/sys/unix"
 )
 
 type PortListener interface {
@@ -404,4 +405,24 @@ func CheckOwnedContainer(containerID string) (bool, error) {
 	}
 
 	return false, nil
+}
+
+func GetContainerNamespace(containerID string) (uint32, error) {
+    cli, err := client.NewClientWithOpts(client.FromEnv)
+    if err != nil {
+        return 0, err
+    }
+
+    inspect, err := cli.ContainerInspect(context.Background(), containerID)
+    if err != nil {
+        return 0, err
+    }
+
+    netnsPath := fmt.Sprintf("/proc/%d/ns/net", inspect.State.Pid)
+    var stat unix.Stat_t
+    if err := unix.Stat(netnsPath, &stat); err != nil {
+        return 0, err
+    }
+
+    return uint32(stat.Ino), nil
 }

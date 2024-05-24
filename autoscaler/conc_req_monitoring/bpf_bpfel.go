@@ -53,18 +53,19 @@ type BPFSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type BPFProgramSpecs struct {
-	TraceInetSockSetState *ebpf.ProgramSpec `ebpf:"trace_inet_sock_set_state"`
+	KprobeTcpRecvmsg *ebpf.ProgramSpec `ebpf:"kprobe_tcp_recvmsg"`
 }
 
 // BPFMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type BPFMapSpecs struct {
-	ActiveConnectionsMap *ebpf.MapSpec `ebpf:"active_connections_map"`
-	BufferMap            *ebpf.MapSpec `ebpf:"buffer_map"`
-	ConstantsMap         *ebpf.MapSpec `ebpf:"constants_map"`
-	Events               *ebpf.MapSpec `ebpf:"events"`
-	ScalingMap           *ebpf.MapSpec `ebpf:"scaling_map"`
+	BufferMap     *ebpf.MapSpec `ebpf:"buffer_map"`
+	ConnCountMap  *ebpf.MapSpec `ebpf:"conn_count_map"`
+	ConstantsMap  *ebpf.MapSpec `ebpf:"constants_map"`
+	Events        *ebpf.MapSpec `ebpf:"events"`
+	ScalingMap    *ebpf.MapSpec `ebpf:"scaling_map"`
+	ValidNetnsMap *ebpf.MapSpec `ebpf:"valid_netns_map"`
 }
 
 // BPFObjects contains all objects after they have been loaded into the kernel.
@@ -86,20 +87,22 @@ func (o *BPFObjects) Close() error {
 //
 // It can be passed to LoadBPFObjects or ebpf.CollectionSpec.LoadAndAssign.
 type BPFMaps struct {
-	ActiveConnectionsMap *ebpf.Map `ebpf:"active_connections_map"`
-	BufferMap            *ebpf.Map `ebpf:"buffer_map"`
-	ConstantsMap         *ebpf.Map `ebpf:"constants_map"`
-	Events               *ebpf.Map `ebpf:"events"`
-	ScalingMap           *ebpf.Map `ebpf:"scaling_map"`
+	BufferMap     *ebpf.Map `ebpf:"buffer_map"`
+	ConnCountMap  *ebpf.Map `ebpf:"conn_count_map"`
+	ConstantsMap  *ebpf.Map `ebpf:"constants_map"`
+	Events        *ebpf.Map `ebpf:"events"`
+	ScalingMap    *ebpf.Map `ebpf:"scaling_map"`
+	ValidNetnsMap *ebpf.Map `ebpf:"valid_netns_map"`
 }
 
 func (m *BPFMaps) Close() error {
 	return _BPFClose(
-		m.ActiveConnectionsMap,
 		m.BufferMap,
+		m.ConnCountMap,
 		m.ConstantsMap,
 		m.Events,
 		m.ScalingMap,
+		m.ValidNetnsMap,
 	)
 }
 
@@ -107,12 +110,12 @@ func (m *BPFMaps) Close() error {
 //
 // It can be passed to LoadBPFObjects or ebpf.CollectionSpec.LoadAndAssign.
 type BPFPrograms struct {
-	TraceInetSockSetState *ebpf.Program `ebpf:"trace_inet_sock_set_state"`
+	KprobeTcpRecvmsg *ebpf.Program `ebpf:"kprobe_tcp_recvmsg"`
 }
 
 func (p *BPFPrograms) Close() error {
 	return _BPFClose(
-		p.TraceInetSockSetState,
+		p.KprobeTcpRecvmsg,
 	)
 }
 

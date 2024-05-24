@@ -1,0 +1,8 @@
+services:
+  webserver:
+    image: php:apache
+    ports:
+      - "8080:80"
+    volumes:
+      - ./delay.php:/var/www/html/index.php
+

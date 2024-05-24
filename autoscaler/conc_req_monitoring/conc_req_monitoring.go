@@ -1,85 +1,81 @@
 package conc_req_monitoring
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang BPF bpf/conc_req_monitoring.c -- -I/usr/include/
-
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang BPF bpf/conc_req_monitoring.c -- -I/usr/include -g
 import (
-	"context"
+    "context"
     "bytes"
     "encoding/binary"
     "fmt"
     "log"
-	"logging"
     "os"
-	"time"
-	"scale"
-	"server"
-	"strings"
+    "strings"
     "sync"
+    "time"
+
     "github.com/cilium/ebpf"
     "github.com/cilium/ebpf/link"
     "github.com/cilium/ebpf/perf"
     "github.com/cilium/ebpf/rlimit"
+    "scale"
+    "server"
 )
 
-// Define the Data structure
 type Data struct {
-    Port    uint16
+    Netns   uint32
     Message [6]byte
 }
 
 type BPFListener struct {
-    PerfReader           *perf.Reader
-    ConstantsMap         *ebpf.Map
-	BufferMap            *ebpf.Map
-    ActiveConnectionsMap *ebpf.Map
-	ScalingMap           *ebpf.Map
-    Events               *ebpf.Map
-    Tracepoint           link.Link
-    closing              chan struct{}
-    closed               bool
-    mu                   sync.Mutex
+    PerfReader       *perf.Reader
+    ConstantsMap     *ebpf.Map
+    BufferMap        *ebpf.Map
+    ConnCountMap     *ebpf.Map
+    ScalingMap       *ebpf.Map
+    ValidNetnsMap    *ebpf.Map
+    Events           *ebpf.Map
+    TcpRecvMsgLink   link.Link
+    closing          chan struct{}
+    closed           bool
+    mu               sync.Mutex
 }
 
 type ConcReqResource struct {
-	LowerLimit   int64
-	UpperLimit   int64
-	BufferLength int64
+    LowerLimit   int64
+    UpperLimit   int64
+    BufferLength int64
 }
 
-type PortContext struct {
-	Ctx    context.Context
-	Cancel context.CancelFunc
-	Signal chan string
+type NamespaceContext struct {
+    Ctx    context.Context
+    Cancel context.CancelFunc
+    Signal chan string
 }
 
-type PortContextMap struct {
+type NamespaceContextMap struct {
     internalMap sync.Map
 }
 
-func (pcm *PortContextMap) Store(port uint16, portCtx PortContext) {
-    pcm.internalMap.Store(port, portCtx)
+func (ncm *NamespaceContextMap) Store(netns uint32, nsCtx NamespaceContext) {
+    ncm.internalMap.Store(netns, nsCtx)
 }
 
-func (pcm *PortContextMap) Load(port uint16) (PortContext, bool) {
-    value, ok := pcm.internalMap.Load(port)
+func (ncm *NamespaceContextMap) Load(netns uint32) (NamespaceContext, bool) {
+    value, ok := ncm.internalMap.Load(netns)
     if !ok {
-        return PortContext{}, false
+        return NamespaceContext{}, false
     }
-    return value.(PortContext), true
+    return value.(NamespaceContext), true
 }
 
-func (pcm *PortContextMap) Delete(port uint16) {
-    pcm.internalMap.Delete(port)
+func (ncm *NamespaceContextMap) Delete(netns uint32) {
+    ncm.internalMap.Delete(netns)
 }
-
 
 var (
-	portToContext      PortContextMap
-	listenerInstance   *BPFListener
-	once               sync.Once
+    namespaceToContext NamespaceContextMap
+    listenerInstance   *BPFListener
+    once               sync.Once
 )
-
-
 
 func InitBPFListener(resource ConcReqResource) error {
     // Allow the current process to lock memory for eBPF resources.
@@ -87,16 +83,25 @@ func InitBPFListener(resource ConcReqResource) error {
         return fmt.Errorf("failed to remove memlock limit: %v", err)
     }
 
+    
     objs := BPFObjects{}
-    if err := LoadBPFObjects(&objs, nil); err != nil {
+    opts := ebpf.CollectionOptions{
+        Programs: ebpf.ProgramOptions{
+            LogLevel: ebpf.LogLevelInstruction,
+            LogSize:  64 * 1024, // Adjust log size if needed
+        },
+    }
+
+    if err := LoadBPFObjects(&objs, &opts); err != nil {
         return fmt.Errorf("loading objects: %v", err)
     }
 
-    // Attach the eBPF program to the tracepoint
-    opts := link.TracepointOptions{}
-    tp, err := link.Tracepoint("sock", "inet_sock_set_state", objs.TraceInetSockSetState, &opts)
+    fmt.Println("Loading program...")
+
+    // Attach the eBPF program to the kprobes
+    tcpRecvMsgLink, err := link.Kprobe("tcp_recvmsg", objs.KprobeTcpRecvmsg, nil)
     if err != nil {
-        return fmt.Errorf("attaching tracepoint: %v", err)
+        return fmt.Errorf("attaching tcp_recvmsg kprobe: %v", err)
     }
 
     perfReader, err := perf.NewReader(objs.Events, os.Getpagesize())
@@ -105,20 +110,21 @@ func InitBPFListener(resource ConcReqResource) error {
     }
 
     listener := &BPFListener{
-        PerfReader:           perfReader,
-        ConstantsMap:         objs.ConstantsMap,
-		BufferMap:            objs.BufferMap,
-        ActiveConnectionsMap: objs.ActiveConnectionsMap,
-		ScalingMap:           objs.ScalingMap,
-        Events:               objs.Events,
-        Tracepoint:           tp,
-        closing:              make(chan struct{}),
-        closed:               false,
+        PerfReader:       perfReader,
+        ConstantsMap:     objs.ConstantsMap,
+        BufferMap:        objs.BufferMap,
+        ConnCountMap:     objs.ConnCountMap,
+        ScalingMap:       objs.ScalingMap,
+        ValidNetnsMap:    objs.ValidNetnsMap,
+        Events:           objs.Events,
+        TcpRecvMsgLink:   tcpRecvMsgLink,
+        closing:          make(chan struct{}),
+        closed:           false,
     }
 
     go listener.listenForEvents()
 
-	lowerLimitKey := uint32(0)
+    lowerLimitKey := uint32(0)
     upperLimitKey := uint32(1)
     bufferLengthKey := uint32(2)
 
@@ -132,9 +138,8 @@ func InitBPFListener(resource ConcReqResource) error {
         log.Fatalf("updating constants_map: %v", err)
     }
 
-	listenerInstance = listener
-	return nil
-
+    listenerInstance = listener
+    return nil
 }
 
 func (s *BPFListener) Close() {
@@ -143,7 +148,7 @@ func (s *BPFListener) Close() {
 
     if !s.closed {
         close(s.closing)
-        s.Tracepoint.Close()
+        s.TcpRecvMsgLink.Close()
         s.PerfReader.Close()
         s.closed = true
     }
@@ -160,146 +165,155 @@ func (s *BPFListener) listenForEvents() {
                 if err == perf.ErrClosed {
                     return // Exiting
                 }
-                logging.AddEventLog(fmt.Sprintf("Error reading perf event: %v", err))
+                fmt.Printf("Error reading perf event: %v\n", err)
                 continue
             }
 
             if record.LostSamples > 0 {
-                logging.AddEventLog(fmt.Sprintf("lost %d samples", record.LostSamples))
+                fmt.Printf("lost %d samples\n", record.LostSamples)
                 continue
             }
 
             var data Data
             reader := bytes.NewReader(record.RawSample)
             if err := binary.Read(reader, binary.LittleEndian, &data); err != nil {
-                log.Printf("parsing event data: %v", err)
+                fmt.Printf("parsing event data: %v\n", err)
                 continue
             }
 
-			direction := string(data.Message[:])
-            if portCtx, ok := portToContext.Load(data.Port); ok {
+            direction := string(data.Message[:])
+            if nsCtx, ok := namespaceToContext.Load(data.Netns); ok {
 
-				select {
-				case <-portCtx.Ctx.Done():
-					// context already cancelled
-				default:
-					portCtx.Signal <- direction
-				}
+                select {
+                case <-nsCtx.Ctx.Done():
+                    // context already cancelled
+                default:
+                    nsCtx.Signal <- direction
+                }
 
-			}
+            }
         }
     }
 }
 
-func addPort(port uint16, portCtx PortContext) error {
-	if err := listenerInstance.ActiveConnectionsMap.Put(uint16(port), uint32(0)); err != nil {
+func addNamespace(netns uint32, nsCtx NamespaceContext) error {
+    if err := listenerInstance.ConnCountMap.Put(netns, uint32(0)); err != nil {
+        log.Fatalf("Failed to add namespace %d to ConnCountMap: %v", netns, err)
         return err
     }
 
-	addPortToScalingMap(uint16(port))
+    if err := listenerInstance.ValidNetnsMap.Put(netns, uint32(1)); err != nil {
+        log.Fatalf("Failed to add namespace %d to ValidNetnsMap: %v", netns, err)
+        return err
+    }
 
-	portToContext.Store(port, portCtx)
+    addNamespaceToScalingMap(netns)
 
-	logging.AddEventLog(fmt.Sprintf("Monitoring on port %d", port))
+    namespaceToContext.Store(netns, nsCtx)
 
-	return nil
+    fmt.Printf("Monitoring on namespace %d\n", netns)
+
+    return nil
 }
 
-func removePort(port uint16) error {
-	if err := listenerInstance.ActiveConnectionsMap.Delete(port); err != nil {
-		log.Printf("Failed to delete port %d from ActiveConnectionsMap: %v", port, err)
-		return err
-	}
+func removeNamespace(netns uint32) error {
+    if err := listenerInstance.ConnCountMap.Delete(netns); err != nil {
+        fmt.Printf("Failed to delete namespace %d from ConnCountMap: %v\n", netns, err)
+        return err
+    }
 
-	if err := listenerInstance.BufferMap.Delete(port); err != nil {
-		log.Printf("Failed to delete port %d from BufferMap: %v", port, err)
-		return err
-	}
+    if err := listenerInstance.BufferMap.Delete(netns); err != nil {
+        fmt.Printf("Failed to delete namespace %d from BufferMap: %v\n", netns, err)
+        return err
+    }
 
-	portToContext.Delete(port)
-	return nil
+    if err := listenerInstance.ValidNetnsMap.Delete(netns); err != nil {
+        fmt.Printf("Failed to delete namespace %d from ValidNetnsMap: %v\n", netns, err)
+        return err
+    }
+
+    namespaceToContext.Delete(netns)
+    return nil
 }
 
-func addPortToScalingMap(port uint16) error {
-	if err := listenerInstance.ScalingMap.Put(port, uint32(0)); err != nil {
-		log.Printf("Failed to update port %d from ScalingMap: %v", port, err)
-	}
+func addNamespaceToScalingMap(netns uint32) error {
+    if err := listenerInstance.ScalingMap.Put(netns, uint32(0)); err != nil {
+        fmt.Printf("Failed to update namespace %d in ScalingMap: %v\n", netns, err)
+    }
 
-	return nil
+    return nil
 }
 
 func (resource *ConcReqResource) Monitor(ctx context.Context, containerID string, collectionPeriod time.Duration, swarmNodeInfo *server.SwarmNodeInfo) {
 
-	serviceID, err := scale.FindServiceIDFromContainer(containerID)
-	if err != nil {
-		log.Fatalf("Couldn't get service ID in ConcReqResource Monitor")
-	}
+    serviceID, err := scale.FindServiceIDFromContainer(containerID)
+    if err != nil {
+        log.Fatalf("Couldn't get service ID in ConcReqResource Monitor")
+    }
 
-	port, err := scale.GetPublishedPort(serviceID)
+    netns, err := scale.GetContainerNamespace(containerID)
+    if err != nil {
+        log.Fatalf("Couldn't get network namespace for container %s: %v", containerID, err)
+    }
 
-	if err != nil {
-		log.Fatalf("Couldn't get published port for service %s", serviceID)
-	}
+    ctx, cancel := context.WithCancel(ctx)
+    signal := make(chan string)
 
-	ctx, cancel := context.WithCancel(ctx)
-	signal := make(chan string)
+    nsCtx := NamespaceContext{
+        Ctx:    ctx,
+        Cancel: cancel,
+        Signal: signal,
+    }
 
-	portCtx := PortContext{
-		Ctx: ctx,
-		Cancel: cancel,
-		Signal: signal,
-	}
+    addNamespace(netns, nsCtx)
 
-	addPort(uint16(port), portCtx)
+    cleanup := func() {
+        if err := removeNamespace(netns); err != nil {
+            fmt.Printf("Couldn't clean up BPF monitor for namespace %v\n", netns)
+        }
+    }
 
-	cleanup := func() {
-		if err := removePort(uint16(port)); err != nil {
-			fmt.Println("Couldn't clean up BPF monitor for port %v", port)
-		}
-	}
+    for {
+        select {
+        case <-ctx.Done():
+            cleanup()
+            fmt.Printf("Stopped monitoring for container %s\n", containerID)
+            return
+        case threshold := <-signal:
+            var direction string
 
-	for {
-		select {
-		case <-ctx.Done():
-			cleanup()
-			logging.AddEventLog(fmt.Sprintf("Stopped monitoring for container %s", containerID))
-			return
-		case threshold := <-signal:
-			var direction string
-			
+            // Trim null character from eBPF program
+            threshold = strings.Trim(threshold, "\x00")
 
-			// Trim null character from eBPF program
-			threshold = strings.Trim(threshold, "\x00")
-			
-			if threshold == "Lower" {
-				direction = "under"
-			} else if threshold == "Upper" {
-				direction = "over"
-			} else {
-				logging.AddEventLog(fmt.Sprintf("Invalid scaling direction."))
-			}
-			
-			logging.AddEventLog(fmt.Sprintf("Scale triggered for port %d in direction %s\n", port, direction))
-			
-			if swarmNodeInfo.AutoscalerManager {
-				if err := scale.ScaleService(containerID, direction); err != nil {
-					logging.AddEventLog(fmt.Sprintf("Error scaling service for container %s: %v", containerID, err))
-				} 
-			} else {
-				managerNode, err := server.GetManagerNode(swarmNodeInfo.OtherNodes)
-				if err != nil {
-					logging.AddEventLog(fmt.Sprintf("Error getting manager node: %v", err))
-					return
-				}
+            if threshold == "Lower" {
+                direction = "under"
+            } else if threshold == "Upper" {
+                direction = "over"
+            } else {
+                fmt.Printf("Invalid scaling direction.\n")
+            }
 
-				if err := server.SendScaleRequest(serviceID, direction, managerNode.IP); err != nil {
-					logging.AddEventLog(fmt.Sprintf("Error sending scale request to manager node: %v", err))
-				}
-			}
+            fmt.Printf("Scale triggered for namespace %d in direction %s\n", netns, direction)
 
-			// sleep to wait for scaling then add port back to BPF program
-			time.Sleep(time.Second * 10)
-			addPortToScalingMap(uint16(port))
-		}
-	}
+            if swarmNodeInfo.AutoscalerManager {
+                if err := scale.ScaleService(containerID, direction); err != nil {
+                    fmt.Printf("Error scaling service for container %s: %v\n", containerID, err)
+                }
+            } else {
+                managerNode, err := server.GetManagerNode(swarmNodeInfo.OtherNodes)
+                if err != nil {
+                    fmt.Printf("Error getting manager node: %v\n", err)
+                    return
+                }
+
+                if err := server.SendScaleRequest(serviceID, direction, managerNode.IP); err != nil {
+                    fmt.Printf("Error sending scale request to manager node: %v\n", err)
+                }
+            }
+
+            // Sleep to wait for scaling then add namespace back to BPF program
+            time.Sleep(time.Second * 5)
+            addNamespaceToScalingMap(netns)
+        }
+    }
 }

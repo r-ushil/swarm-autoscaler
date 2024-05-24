@@ -1,5 +1,9 @@
 #!/bin/bash
 
+cd ../conc_req_monitoring
+rm bpf_*
+go generate ./...
+
 cd ../autoscaler
 go build -o ../build/swarm-autoscaler autoscaler.go
 
