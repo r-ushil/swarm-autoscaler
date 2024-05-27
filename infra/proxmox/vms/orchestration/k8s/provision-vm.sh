@@ -1,7 +1,7 @@
 #!/bin/bash -xe
 
 NODE_NAME="octopus2"
-TEMPLATE_VMID=9000
+TEMPLATE_VMID=9003
 CI_USER="keights"
 CI_PASSWORD="keights"
 SSH_KEY_PATH="${HOME}/.ssh/id_rsa.pub"
@@ -17,7 +17,7 @@ for COUNT in {1..3}; do
   IP="${BASE_IP}$((COUNT + 2))"
   VMID=$(($VMID_BASE + $COUNT))
   IPCONFIG="ip=${IP}/24,gw=${GW}"
-  VM_NAME="swarm-vm${COUNT}"
+  VM_NAME="keda-vm${COUNT}"
 
   echo "Creating VM: ${VM_NAME} with IP: ${IP} and VMID: ${VMID}"
 
