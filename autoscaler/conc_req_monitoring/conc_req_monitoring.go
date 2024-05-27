@@ -74,7 +74,6 @@ func (ncm *NamespaceContextMap) Delete(netns uint32) {
 var (
     namespaceToContext NamespaceContextMap
     listenerInstance   *BPFListener
-    once               sync.Once
 )
 
 func InitBPFListener(resource ConcReqResource) error {

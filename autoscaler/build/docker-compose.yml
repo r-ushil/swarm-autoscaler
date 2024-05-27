@@ -10,6 +10,7 @@ services:
       - ./logging:/autoscaler/logging # (optional) for logfile
       - /sys/kernel/debug:/sys/kernel/debug # mount debugfs
       - /sys/fs/bpf:/sys/fs/bpf # mount BPF filesystem
+      - /proc:/host_proc:ro # mount proc for network namespace info
     cap_add:
       - SYS_ADMIN # for BPF privileges
       - SYS_RESOURCE # for setting resource limits

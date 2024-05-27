@@ -59,6 +59,7 @@ int port_classifier(struct __sk_buff *skb) {
     u32 *found = bpf_map_lookup_elem(&ports_map, &tcp_dest_port);
     if (found) {
         long value = tcp_dest_port; // Pass the detected port as the value
+        bpf_perf_event_output(skb, &events, BPF_F_CURRENT_CPU, &value, sizeof(value));
     }
 
     return TC_ACT_OK;

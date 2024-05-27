@@ -418,9 +418,34 @@ func GetContainerNamespace(containerID string) (uint32, error) {
         return 0, err
     }
 
-    netnsPath := fmt.Sprintf("/proc/%d/ns/net", inspect.State.Pid)
+	pid := inspect.State.Pid
+	var procPath string
+
+    // Check if /host_proc exists
+    if _, err := os.Stat("/host_proc"); err == nil {
+        // Use /host_proc if it exists
+        procPath = fmt.Sprintf("/host_proc/%d/ns/net", pid)
+    } else {
+        // Fallback to /proc
+        procPath = fmt.Sprintf("/proc/%d/ns/net", pid)
+    }
+
+    // Check if the file exists
+    if _, err := os.Stat(procPath); os.IsNotExist(err) {
+        fmt.Printf("Network namespace path does not exist: %v\n", err)
+        return 0, err
+    }
+
     var stat unix.Stat_t
-    if err := unix.Stat(netnsPath, &stat); err != nil {
+    if err := unix.Stat(procPath, &stat); err != nil {
+        fmt.Printf("Failed to stat network namespace path: %v\n", err)
+        if err == unix.ENOENT {
+            fmt.Println("Error: No such file or directory")
+        } else if err == unix.EACCES {
+            fmt.Println("Error: Permission denied")
+        } else {
+            fmt.Printf("Unexpected error: %v\n", err)
+        }
         return 0, err
     }
 
