@@ -48,8 +48,8 @@ struct data_t {
 };
 
 static __always_inline u32 get_netns_from_task(struct task_struct *task) {
-    struct nsproxy *ns;
-    struct net *net;
+    struct nsproxy *ns = NULL;
+    struct net *net = NULL;
     u32 netns = 0;
 
     bpf_core_read(&ns, sizeof(ns), &task->nsproxy);
@@ -67,20 +67,30 @@ int kprobe_tcp_recvmsg(struct pt_regs *ctx) {
     struct sock *sk = NULL;
     struct task_struct *task = (struct task_struct *)bpf_get_current_task();
     u32 netns = get_netns_from_task(task);
-    netns = (u32)(netns);  // Ensure netns is treated as unsigned
+
+    //bpf_printk("netns: %u\n", netns);
+
 
     // Read the sk pointer from the first argument of tcp_recvmsg
     bpf_probe_read_kernel(&sk, sizeof(sk), (void *)&ctx->di);
 
+    if (!sk) {
+        //bpf_printk("Failed to read sk pointer\n");
+        return 0;
+    }
+
     // Check if the namespace is valid for tracked containers
     u32 *valid_ns = bpf_map_lookup_elem(&valid_netns_map, &netns);
     if (!valid_ns) {
+        //bpf_printk("Namespace %u is not valid.\n", netns);
         return 0;
     }
 
     // Determine the TCP state using bpf_core_read
     u8 state = 0;
     bpf_core_read(&state, sizeof(state), &sk->__sk_common.skc_state);
+
+    //bpf_printk("TCP state: %u\n", state);
 
     u32 new_value = 0;
     u32 key = 0;
@@ -91,6 +101,7 @@ int kprobe_tcp_recvmsg(struct pt_regs *ctx) {
     u32 *bufferLength = bpf_map_lookup_elem(&constants_map, &key);
 
     if (!lowerLimit || !upperLimit || !bufferLength) {
+        //bpf_printk("Missing constants.\n");
         return 0;
     }
 
@@ -110,6 +121,8 @@ int kprobe_tcp_recvmsg(struct pt_regs *ctx) {
             new_value = *count;
         }
     }
+
+    //bpf_printk("Connection count for netns %u: %u\n", netns, new_value);
 
     u32 *scaling = bpf_map_lookup_elem(&scaling_map, &netns);
     if (scaling && *scaling == 1) {
@@ -148,6 +161,8 @@ int kprobe_tcp_recvmsg(struct pt_regs *ctx) {
 
         u32 zero = 0;
         bpf_map_update_elem(&buffer_map, &netns, &zero, BPF_ANY);
+
+        //bpf_printk("Scaling triggered for netns %u\n", netns);
     }
 
     return 0;

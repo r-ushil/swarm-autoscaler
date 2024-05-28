@@ -60,6 +60,7 @@ int port_classifier(struct __sk_buff *skb) {
     if (found) {
         long value = tcp_dest_port; // Pass the detected port as the value
         bpf_perf_event_output(skb, &events, BPF_F_CURRENT_CPU, &value, sizeof(value));
+        //bpf_printk("Sent perf to scale to 1");
     }
 
     return TC_ACT_OK;

@@ -1,8 +1,8 @@
 # autoscaler config
 
 # CPU Util thresholds
-# lower-cpu: 10
-# upper-cpu: 50
+#lower-cpu: 10
+#upper-cpu: 50
 
 # Memory (MB) thresholds
 # lower-mm: 100
@@ -28,12 +28,12 @@ iface: wlp60s0
 
 # list of manager nodes (hostnames) to IPs
 managers:
-  lucario: 127.0.0.1 
+  lucario: 127.0.0.1
 
 # list of worker nodes (hostnames) to IPs
 #workers:
-#  swarm-vm2: 192.168.2.5
-#  swarm-vm3: 192.168.2.6
+  #swarm-vm2: 192.168.2.5
+  #swarm-vm3: 192.168.2.6
 
 # write autoscaler logs to a file (/autoscaler/logging/autoscaler.log)
 logging:
