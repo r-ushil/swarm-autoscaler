@@ -17,14 +17,3 @@
   roles:
     - swarm_worker
 
-- name: Setup Prom/Grafana
-  hosts: monitoring
-  roles:
-    - setup_promgraf
-
-- name: Setup cadvisor
-  hosts:
-    - swarm_worker
-    - swarm_manager
-  roles:
-    - setup_cadvisor

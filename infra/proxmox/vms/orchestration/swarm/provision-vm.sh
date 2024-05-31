@@ -1,7 +1,7 @@
 #!/bin/bash -xe
 
 NODE_NAME="octopus2"
-TEMPLATE_VMID=9002
+TEMPLATE_VMID=9004
 CI_USER="swarm"
 CI_PASSWORD="swarm"
 SSH_KEY_PATH="${HOME}/.ssh/id_rsa.pub"

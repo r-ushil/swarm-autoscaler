@@ -1,0 +1,22 @@
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: apache-http-scaledobject
+  namespace: default
+spec:
+  hosts:
+    - apache.local
+  scaleTargetRef:
+    name: apache-deployment
+    kind: Deployment
+    apiVersion: apps/v1
+    service: apache-service
+    port: 80
+  replicas:
+    min: 0
+    max: 10
+  scalingMetric:
+    concurrency:
+      targetValue: 10  # Target number of concurrent requests
+  scaledownPeriod: 50  # No cooldown period
+

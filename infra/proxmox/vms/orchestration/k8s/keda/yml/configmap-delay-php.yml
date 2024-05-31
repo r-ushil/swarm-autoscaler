@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: delay-php-config
+  namespace: default
+data:
+  index.php: |
+    <?php
+    sleep(2);
+    echo "Hello, World!";
+

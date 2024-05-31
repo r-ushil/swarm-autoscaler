@@ -1,0 +1,33 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: apache
+  namespace: default
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/metric: concurrency
+        autoscaling.knative.dev/target: "10"
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "10"
+        autoscaling.knative.dev/scale-to-zero-pod-retention-period: "0s"
+        autoscaling.knative.dev/window: "6s"
+    spec:
+      containers:
+        - image: php:apache
+          ports:
+            - containerPort: 80
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          volumeMounts:
+            - name: delay-php-volume
+              mountPath: /var/www/html/index.php
+              subPath: index.php
+      volumes:
+        - name: delay-php-volume
+          configMap:
+            name: delay-php-config
+
