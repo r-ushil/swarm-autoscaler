@@ -1,0 +1,21 @@
+
+services:
+  swarm-autoscaler:
+    image: rushpate/swarm-autoscaler:latest
+    hostname: ${HOSTNAME} # for autoscaler node info resolution
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro # for metric monitoring
+      - /var/run/docker.sock:/var/run/docker.sock # for Docker API
+      - ./config.yaml:/autoscaler/config.yaml:ro # for config
+      - ./logging:/autoscaler/logging # (optional) for logfile
+      - /sys/kernel/debug:/sys/kernel/debug # mount debugfs
+      - /sys/fs/bpf:/sys/fs/bpf # mount BPF filesystem
+      - /proc:/host_proc:ro # mount proc for network namespace info
+    cap_add:
+      - SYS_ADMIN # for BPF privileges
+      - SYS_RESOURCE # for setting resource limits
+      - SYS_PTRACE # for debugging
+    security_opt:
+      - apparmor=unconfined
+    network_mode: host # to detect host ports
+
