@@ -1,18 +1,24 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
- name: apache-ingress
- namespace: keda # <-- namespace where the Add-On is installed
+  name: apache-ingress
+  namespace: keda
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/client-max-body-size: "100m"
 spec:
- ingressClassName: nginx
- rules:
- - host: apache.local
-   http:
-     paths:
-     - path: /
-       pathType: Prefix
-       backend:
-         service:
-           name: keda-add-ons-http-interceptor-proxy
-           port:
-             number: 8080
+  ingressClassName: nginx
+  rules:
+  - host: apache.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: keda-add-ons-http-interceptor-proxy
+            port:
+              number: 8080
+

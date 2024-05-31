@@ -22,9 +22,17 @@ spec:
             app: httpd
       containers:
       - name: httpd
-        image: httpd:2.4
+        image: php:apache
         ports:
         - containerPort: 80
+        volumeMounts:
+        - name: delay-php-volume
+          mountPath: /var/www/html/index.php
+          subPath: index.php
+      volumes:
+      - name: delay-php-volume
+        configMap:
+          name: delay-php-config
 ---
 apiVersion: v1
 kind: Service

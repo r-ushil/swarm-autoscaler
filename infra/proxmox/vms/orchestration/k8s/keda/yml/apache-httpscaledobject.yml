@@ -18,5 +18,5 @@ spec:
   scalingMetric:
     concurrency:
       targetValue: 10  # Target number of concurrent requests
-  scaledownPeriod: 50  # No cooldown period
+  scaledownPeriod: 10  # No cooldown period
 
