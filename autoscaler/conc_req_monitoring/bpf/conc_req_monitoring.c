@@ -90,7 +90,7 @@ int kprobe_tcp_recvmsg(struct pt_regs *ctx) {
     u8 state = 0;
     bpf_core_read(&state, sizeof(state), &sk->__sk_common.skc_state);
 
-    //bpf_printk("TCP state: %u\n", state);
+    
 
     u32 new_value = 0;
     u32 key = 0;
@@ -115,14 +115,17 @@ int kprobe_tcp_recvmsg(struct pt_regs *ctx) {
     if (state == TCP_ESTABLISHED) {
         (*count)++;
         new_value = *count;
-    } else if (state == TCP_CLOSE || state == TCP_CLOSE_WAIT) {
+    } else if (state == TCP_CLOSE || state == TCP_CLOSE_WAIT || state == TCP_LAST_ACK || TCP_CLOSING) {
         if (*count > 0) {
             (*count)--;
             new_value = *count;
         }
+    } else {
+        bpf_printk("TCP state: %u\n", state);
     }
+    
 
-    //bpf_printk("Connection count for netns %u: %u\n", netns, new_value);
+    bpf_printk("Connection count for netns %u: %u\n", netns, new_value);
 
     u32 *scaling = bpf_map_lookup_elem(&scaling_map, &netns);
     if (scaling && *scaling == 1) {
