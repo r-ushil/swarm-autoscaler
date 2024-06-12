@@ -3,17 +3,22 @@ output_file="swarm_zero_to_one.csv"
 duration=600  # 10 minutes in seconds
 interval=60   # Interval in seconds
 
+# Prime service so that it scales to 0
+python3 zero-to-one-value.py
+sleep 10
+
 echo "time,second_number" > $output_file
 end_time=$((SECONDS + duration))
 iteration=1
 
+
 while [ $SECONDS -lt $end_time ]; do
   start_time=$(date +%s)
-  current_time=$(date +"%Y-%m-%d %H:%M:%S")
-  output=$(python3 zero-to-one-value.py && python3 zero-to-one-value.py && python3 zero-to-one-value.py && sleep 10 && python3 zero-to-one-value.py)
+  current_time=$(date +"%Y-%m-%d %H:%M:%S.%N")
+  output=$(python3 zero-to-one-value.py)
 
   # Extract the second number from the output
-  second_number=$(echo "$output" | tail -n 1)
+  second_number=$(echo "$output")
 
   echo "$current_time,$second_number" >> $output_file
   echo "Iteration: $iteration"

@@ -14,9 +14,9 @@ spec:
     port: 80
   replicas:
     min: 0
-    max: 10
+    max: 100
   scalingMetric:
     concurrency:
-      targetValue: 10  # Target number of concurrent requests
+      targetValue: 20
   scaledownPeriod: 10  # No cooldown period
 

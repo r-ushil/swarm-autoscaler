@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Input and output files
-SWARM_INPUT_FILE="swarm_metrics.csv"
-SWARM_OUTPUT_FILE="swarm_metrics_sanitised.csv"
+SWARM_INPUT_FILE="swarm_metrics_idle.csv"
+SWARM_OUTPUT_FILE="swarm_metrics_idle_sanitised.csv"
 
 # Function to sanitise swarm metrics
 sanitise_swarm_metrics() {

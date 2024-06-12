@@ -18,6 +18,10 @@ spec:
         image: php:apache
         ports:
         - containerPort: 80
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "256Mi"
         volumeMounts:
           - name: delay-php-volume
             mountPath: /var/www/html/delay.php
@@ -39,5 +43,6 @@ spec:
   - protocol: TCP
     port: 80
     targetPort: 80
-  type: ClusterIP
+    nodePort: 30080
+  type: NodePort
 

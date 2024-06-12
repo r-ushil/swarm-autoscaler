@@ -18,10 +18,10 @@ spec:
         - image: php:apache
           ports:
             - containerPort: 80
-          resources:
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
+              #resources:
+              #limits:
+              #cpu: "2000m"
+              #memory: "512Mi"
           volumeMounts:
             - name: delay-php-volume
               mountPath: /var/www/html/index.php

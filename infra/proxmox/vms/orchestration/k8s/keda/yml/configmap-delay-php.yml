@@ -6,6 +6,6 @@ metadata:
 data:
   delay.php: |
     <?php
-    sleep(2);
+    sleep(2)
     echo "Hello, World!";
 

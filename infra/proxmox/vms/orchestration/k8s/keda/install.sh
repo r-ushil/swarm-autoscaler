@@ -11,16 +11,16 @@ helm install keda kedacore/keda --namespace keda --create-namespace
 
 sleep 3
 
-helm install keda-add-ons-http kedacore/keda-add-ons-http --namespace keda \
-  --set interceptor.waitTimeout=5s \
-  --set interceptor.tcpConnectTimeout=1s \
-  --set interceptor.keepAlive=30s \
-  --set interceptor.responseHeaderTimeout=5s \
-  --set interceptor.idleConnTimeout=30s \
-  --set interceptor.tlsHandshakeTimeout=10s \
-  --set interceptor.expectContinueTimeout=1s
+#helm install keda-add-ons-http kedacore/keda-add-ons-http --namespace keda \
+#  --set interceptor.waitTimeout=5s \
+#  --set interceptor.tcpConnectTimeout=1s \
+#  --set interceptor.keepAlive=30s \
+#  --set interceptor.responseHeaderTimeout=5s \
+#  --set interceptor.idleConnTimeout=30s \
+#  --set interceptor.tlsHandshakeTimeout=10s \
+#  --set interceptor.expectContinueTimeout=1s
 
-#helm install keda-add-ons-http kedacore/keda-add-ons-http --namespace keda
+helm install keda-add-ons-http kedacore/keda-add-ons-http --namespace keda
 
 sleep 3
 
@@ -38,8 +38,4 @@ kubectl apply -f -
 
 sleep 30
 
-kubectl apply -f ./yml-httpd/configmap-delay-php.yml
-kubectl apply -f ./yml-httpd/nginx-ingress.yml
-kubectl apply -f ./yml-httpd/httpd-deployment.yml
-kubectl apply -f ./yml-httpd/httpd-ingress.yml
-kubectl apply -f ./yml-httpd/httpd-httpscaledobject.yml
+./apply.sh
