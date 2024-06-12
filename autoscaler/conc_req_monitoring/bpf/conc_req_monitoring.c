@@ -115,7 +115,7 @@ int kprobe_tcp_recvmsg(struct pt_regs *ctx) {
     if (state == TCP_ESTABLISHED) {
         (*count)++;
         new_value = *count;
-    } else if (state == TCP_CLOSE || state == TCP_CLOSE_WAIT || state == TCP_LAST_ACK || TCP_CLOSING) {
+    } else if (state == TCP_CLOSE || state == TCP_CLOSE_WAIT || TCP_LAST_ACK) {
         if (*count > 0) {
             (*count)--;
             new_value = *count;

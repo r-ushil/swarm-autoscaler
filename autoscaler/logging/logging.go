@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
+
 	"github.com/olekukonko/tablewriter"
 )
 
@@ -13,11 +15,34 @@ type EventLog struct {
 	Event string
 }
 
+type ScalingLog struct {
+	Time string
+	Direction string
+}
+
 var containerLogs = make(map[string]float64)
 var serviceLogs = make(map[string]uint32)
 var bpfListenerLogs = make(map[uint32]string)
 var eventLogs = []EventLog{}
 
+
+func AddScalingLog(direction string) {
+	logEntry := ScalingLog{time.Now().String(), direction}
+
+	logFilePath := "logging/scaling.log"
+
+	// Open the file in append mode, create it if it doesn't exist
+	file, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Error opening log file: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	if _, err := file.WriteString(fmt.Sprintf("%s %s\n", logEntry.Time, logEntry.Direction)); err != nil {
+		fmt.Printf("Error writing to log file: %v\n", err)
+	}
+}
 
 func AddContainerLog(containerId string, util float64) {
 	containerLogs[containerId] = util
@@ -58,6 +83,19 @@ func RemoveBPFListenerLog(port uint32) {
 func AddEventLog(event string) {
 	fmt.Println(event)
 	eventLogs = append(eventLogs, EventLog{Event: event})
+}
+
+func WriteScaleLogs() {
+
+	logFile, err := os.OpenFile("logging/autoscaler.log", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
+	if err != nil {
+		panic(err)
+	}
+
+	defer logFile.Close()
+
+
+
 }
 
 func WriteLogs(events bool) {

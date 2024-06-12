@@ -5,15 +5,17 @@ package bpf_port_listen
 import (
 	"encoding/binary"
 	"fmt"
+	"logging"
+	"os"
+	"server"
+	"sync"
+	"time"
+
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/vishvananda/netlink"
-	"logging"
-	"os"
-	"server"
-	"sync"
 )
 
 type Scaler interface {
@@ -126,6 +128,7 @@ func (s *BPFListener) listenForEvents() {
 					continue
 				}
 				logging.AddEventLog(fmt.Sprintf("Packet detected on port %d, triggering scale action for service %s", port, serviceID))
+				logging.AddScalingLog("up")
 
 				// remove the port and scale back up
 				if err := s.RemovePort(port); err != nil {

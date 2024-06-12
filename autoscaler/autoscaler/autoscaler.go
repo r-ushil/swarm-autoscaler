@@ -167,13 +167,13 @@ func main() {
 	}()
 
 	if config.Logging["enable"] {
-		go func() {
-			for {
-				os.MkdirAll("logging", 0755)
-				logging.WriteLogs(config.Logging["events"])
-				time.Sleep(1 * time.Second)
-			}
-		}()
+		os.MkdirAll("logging", 0755)
+		// go func() {
+		// 	for {
+		// 		logging.WriteLogs(config.Logging["events"])
+		// 		time.Sleep(1 * time.Second)
+		// 	}
+		// }()
 	}
 
 	// Wait for a signal to terminate

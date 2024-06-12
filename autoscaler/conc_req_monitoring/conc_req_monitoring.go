@@ -2,22 +2,23 @@ package conc_req_monitoring
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang BPF bpf/conc_req_monitoring.c -- -I/usr/include -g
 import (
-    "context"
-    "bytes"
-    "encoding/binary"
-    "fmt"
-    "log"
-    "os"
-    "strings"
-    "sync"
-    "time"
+	"bytes"
+	"context"
+	"encoding/binary"
+	"fmt"
+	"log"
+	"os"
+	"strings"
+	"sync"
+	"time"
 
-    "github.com/cilium/ebpf"
-    "github.com/cilium/ebpf/link"
-    "github.com/cilium/ebpf/perf"
-    "github.com/cilium/ebpf/rlimit"
-    "scale"
-    "server"
+	"scale"
+	"server"
+
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/perf"
+	"github.com/cilium/ebpf/rlimit"
 )
 
 type Data struct {
@@ -181,6 +182,7 @@ func (s *BPFListener) listenForEvents() {
             }
 
             direction := string(data.Message[:])
+            // logging.AddScalingLog(direction)
             if nsCtx, ok := namespaceToContext.Load(data.Netns); ok {
 
                 select {

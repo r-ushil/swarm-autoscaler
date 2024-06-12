@@ -53,6 +53,7 @@ func (cpu *CPUResource) Monitor(ctx context.Context, containerID string, collect
 
 			direction := determineScalingDirection(cpuUtilization, cpu.LowerUtil, cpu.UpperUtil)
 			if direction != "" {
+				// logging.AddScalingLog(direction)
 				logging.AddContainerLog(containerID, cpuUtilization)
 				if swarmNodeInfo.AutoscalerManager {
 					if err := scale.ScaleService(containerID, direction); err != nil {
