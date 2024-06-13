@@ -16,12 +16,19 @@ plot_params = [
     ('avg_cpu_millicores', 'busy', 'Average CPU Usage (Busy)', 'faas_avg_cpu_busy.png'),
 ]
 def create_bar_plot(column, state, title, filename):
+    plt.figure(figsize=(10, 12))
     subset = filtered_df[filtered_df['state'] == state]
-    plt.figure(figsize=(10, 6))
     bars = plt.bar(subset['autoscaler'], subset[column], color=['blue', 'gray', 'orange'])
-    plt.xlabel('Autoscaler')
-    plt.ylabel(column.replace('_', ' ').title())
-    plt.title(title)
+    plt.xlabel('Autoscaler', fontweight='bold')
+
+    if title == "Average Memory Usage (Idle)" or title == "Average Memory Usage (Busy)":
+        y_axis = "Average Memory Usage (MiB)"
+    elif title == "Average CPU Usage (Idle)" or title == "Average CPU Usage (Busy)":
+        y_axis = "Average CPU Utilisation (millicores)"
+
+    plt.ylabel(y_axis, fontweight='bold')
+    plt.title(title, fontweight='bold')
+    plt.grid(axis='y', alpha=0.5)
     
     # Add value labels on top of each bar, centralized
     for bar in bars:

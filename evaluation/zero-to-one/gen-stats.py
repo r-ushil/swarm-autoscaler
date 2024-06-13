@@ -45,7 +45,7 @@ stats_df.to_csv('results/stats.csv', index=False)
 
 # Plot the bar chart
 plt.figure(figsize=(8, 10))
-bars = plt.bar(stats_df['Service'], stats_df['Mean'], color=['blue', 'gray', 'orange'], yerr=(stats_df['95% CI Upper'] - stats_df['Mean']), capsize=5, width=0.3)
+bars = plt.bar(stats_df['Service'], stats_df['Mean'], color=['blue', 'gray', 'orange'], yerr=(stats_df['95% CI Upper'] - stats_df['Mean']), capsize=5)
 
 # Add error bars for 95% CI and value labels
 for idx, row in stats_df.iterrows():
@@ -56,9 +56,9 @@ for idx, row in stats_df.iterrows():
 plt.ylim(0, stats_df['95% CI Upper'].max() + 0.3)
 
 # Add titles and labels with bold font
-plt.title('Average Latency of Autoscalers for Scaling From 0 to 1\n(with 95% Confidence Intervals)', fontweight='bold')
+#plt.title('Average Latency of Autoscalers for Scaling From 0 to 1\n(with 95% Confidence Intervals)', fontweight='bold')
 plt.xlabel('Autoscaler', fontweight='bold')
-plt.ylabel('Average Latency (s)', fontweight='bold')
+plt.ylabel('Average End-to-End Latency (s)', fontweight='bold')
 
 # Add grid for better readability
 plt.grid(axis='y', alpha=0.5)
