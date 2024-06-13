@@ -10,10 +10,10 @@ filtered_df = df[df['autoscaler'].isin(['Kubernetes HPA', 'Reflex (Microservice-
 
 # Define the plot parameters
 plot_params = [
-    ('avg_memory_mib', 'idle', 'Average Memory Usage (Idle)', 'avg_memory_idle.png'),
-    ('avg_memory_mib', 'busy', 'Average Memory Usage (Busy)', 'avg_memory_busy.png'),
-    ('avg_cpu_millicores', 'idle', 'Average CPU Usage (Idle)', 'avg_cpu_idle.png'),
-    ('avg_cpu_millicores', 'busy', 'Average CPU Usage (Busy)', 'avg_cpu_busy.png'),
+    ('avg_memory_mib', 'idle', 'Average Memory Usage (Idle)', 'caas_avg_memory_idle.png'),
+    ('avg_memory_mib', 'busy', 'Average Memory Usage (Busy)', 'caas_avg_memory_busy.png'),
+    ('avg_cpu_millicores', 'idle', 'Average CPU Usage (Idle)', 'caas_avg_cpu_idle.png'),
+    ('avg_cpu_millicores', 'busy', 'Average CPU Usage (Busy)', 'caas_avg_cpu_busy.png'),
 ]
 def create_bar_plot(column, state, title, filename):
     subset = filtered_df[filtered_df['state'] == state]

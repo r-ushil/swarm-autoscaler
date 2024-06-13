@@ -49,13 +49,13 @@ def main():
     os.makedirs('results', exist_ok=True)
 
     # Define directories and files
-    directories = ['k8s_hpa', 'keda', 'knative', 'reflex_faas']
+    directories = ['k8s_hpa', 'keda', 'knative', 'reflex_faas', 'reflex_caas']
     file_types = ['metrics.csv', 'metrics_idle.csv']
     services = {
         'k8s_hpa': 'Kubernetes HPA',
         'keda': 'KEDA',
         'knative': 'Knative',
-        'reflex_faas': 'Reflex (Serverless)'
+        'reflex_faas': 'Reflex (Serverless)',
         'reflex_caas': 'Reflex (Microservice-Based)'
     }
 
